@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Cheapest useful n8n: one Fargate Spot task with a public IP behind CloudFront (no ALB, no NAT),
+# SQLite and binary data on EFS, HTTPS on your domain, and a Cognito login wall enforced
+# at the edge by Lambda@Edge — no n8n paid licence needed.
+apiVersion: n8n-on-aws/v1
+name: n8n-nano
+profile: nano
+environment: dev
+
+n8n:
+  version: "2.37.1"
+  timezone: Europe/Brussels
+  license:
+    edition: community
+    usage: {purpose: personal, accept_sustainable_use_license: true}
+
+ingress:
+  kind: cloudfront
+  cloudfront: {origin: task}
+  domain: n8n.example.com
+  hosted_zone: {kind: lookup, name: example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: cloudfront-cognito
+  cognito:
+    kind: create
+    invite: [me@example.com]
+
+finops:
+  budget: {monthly_usd: 25, alert_emails: [me@example.com]}
+  schedule: {kind: office-hours, timezone: Europe/Brussels}

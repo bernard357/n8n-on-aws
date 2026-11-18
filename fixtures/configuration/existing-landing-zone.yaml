@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Brownfield on ECS: everything that already exists in the landing zone is reused —
+# VPC and subnets, a shared Aurora cluster (an "alien" database for n8n), a shared bucket prefix,
+# the corporate Cognito pool and ACM certificate. Only n8n's services and the cache are created.
+apiVersion: n8n-on-aws/v1
+name: n8n-lz
+profile: medium
+
+aws:
+  account: "123456789012"
+  region: eu-west-1
+  permissions_boundary: arn:aws:iam::123456789012:policy/workload-boundary
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: business
+    activation_key: {secret: n8n/license}
+    usage: {purpose: internal-business, employees: 80}
+
+topology:
+  mode: queue
+
+runtime:
+  platform: ecs
+  ecs:
+    cluster: {kind: existing, name: shared-apps}
+
+network:
+  vpc:
+    kind: existing
+    id: vpc-0a1b2c3d4e5f60718
+    private_subnets: [subnet-0aaa1111, subnet-0bbb2222, subnet-0ccc3333]
+    public_subnets: [subnet-0ddd4444, subnet-0eee5555, subnet-0fff6666]
+
+database:
+  kind: external
+  host: shared-aurora.cluster-abcdefghijkl.eu-west-1.rds.amazonaws.com
+  name: n8n
+  schema: n8n
+  credentials: {secret: rds/shared-aurora/n8n}
+  ssl: verify-full
+  security_group_id: sg-0123456789abcdef0
+
+queue:
+  kind: elasticache-serverless
+
+storage:
+  bucket: {kind: existing, name: acme-shared-workloads, prefix: n8n/,
+           kms_key_arn: arn:aws:kms:eu-west-1:123456789012:key/11111111-2222-3333-4444-555555555555}
+  binary_data: s3
+  exchange: {enabled: true, prefix: n8n/exchange/}
+
+ingress:
+  domain: n8n.apps.acme.example
+  hosted_zone: {kind: none}
+  certificate: {kind: existing, arn: arn:aws:acm:eu-west-1:123456789012:certificate/abcd-1234}
+  public: false
+  allowed_cidrs: [10.0.0.0/8]
+
+auth:
+  mode: alb-cognito
+  cognito:
+    kind: existing
+    user_pool_id: eu-west-1_AbCdEfGhI
+    client_id: 1example23456789
+    domain: login.acme.example

@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Front-end split from execution: main (editor), webhook processors, workers.
+# CloudFront + WAF at the edge, Cognito login enforced by Lambda@Edge,
+# webhook and form paths left open to external callers.
+apiVersion: n8n-on-aws/v1
+name: n8n-split
+profile: large
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: community
+    usage: {purpose: internal-business, accept_sustainable_use_license: true}
+
+topology:
+  mode: split
+  main: {replicas: 1, cpu: 1024, memory: 2048}
+  webhook: {min: 2, max: 10, cpu: 512, memory: 1024, scale_on_cpu: 60}
+  workers: {min: 2, max: 20, cpu: 1024, memory: 2048, concurrency: 10, spot: true}
+
+network:
+  vpc:
+    kind: create
+    cidr: 10.81.0.0/16
+    azs: 3
+    nat: per-az
+    endpoints: [s3, ecr, logs, secretsmanager]
+
+database:
+  kind: aurora-serverless
+  min_acu: 2
+  max_acu: 16
+  readers: 1
+
+queue:
+  kind: elasticache
+  engine: valkey
+  node_type: cache.r7g.large
+  replicas: 1
+
+ingress:
+  domain: flows.example.com
+  hosted_zone: {kind: lookup, name: example.com}
+  certificate: {kind: create}
+  kind: cloudfront
+  cloudfront:
+    origin: alb
+    waf: {kind: managed, rate_limit: 2000}
+
+auth:
+  mode: cloudfront-cognito
+  cognito:
+    kind: create
+    mfa: optional
+  # public_paths: [/my-extra-public-path/*]   # added to the built-in bypass list
+
+observability:
+  container_insights: true
+  prometheus: cloudwatch
+  alarms: {email: [oncall@example.com]}

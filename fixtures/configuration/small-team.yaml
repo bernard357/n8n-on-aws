@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# A team of 5–50 people: single n8n process behind CloudFront, managed PostgreSQL with backups,
+# staff login through Cognito at the edge (MFA required), alarms and a budget by email.
+apiVersion: n8n-on-aws/v1
+name: n8n-team
+profile: small
+
+aws:
+  region: eu-west-1
+  tags: {owner: it-ops, cost-center: automation}
+
+n8n:
+  version: "2.37.1"
+  timezone: Europe/Paris
+  license:
+    edition: registered-community
+    activation_key: {secret: n8n/community-key}
+    usage: {purpose: internal-business, accept_sustainable_use_license: true}
+  executions:
+    max_age_hours: 720
+
+topology:
+  mode: single
+  main: {replicas: 1, cpu: 1024, memory: 2048}
+
+database:
+  kind: aurora-serverless
+  min_acu: 0.5
+  max_acu: 4
+
+network:
+  vpc: {kind: create, nat: none}
+
+ingress:
+  kind: cloudfront
+  cloudfront: {origin: task}
+  domain: automation.example.com
+  hosted_zone: {kind: lookup, name: example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: cloudfront-cognito
+  cognito:
+    kind: create
+    mfa: required
+    invite: [alice@example.com, bob@example.com]
+
+observability:
+  alarms: {email: [it-ops@example.com]}
+
+backup:
+  kind: aws-backup
+  retention_days: 35
+
+finops:
+  budget: {monthly_usd: 120, alert_emails: [it-ops@example.com]}

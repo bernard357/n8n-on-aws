@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Kubernetes shop: deploy into an existing EKS cluster (with KEDA and the AWS Load Balancer
+# Controller already installed) using n8n's official Helm chart. External Redis and PostgreSQL
+# are provided by the platform team.
+apiVersion: n8n-on-aws/v1
+name: n8n-k8s
+profile: large
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: business
+    activation_key: {secret: n8n/license}
+    usage: {purpose: internal-business, employees: 80}
+
+topology:
+  mode: split
+  workers: {min: 2, max: 30, scale_on: queue-depth, target: 20}
+
+runtime:
+  platform: eks
+  eks:
+    cluster: {kind: existing, name: platform-prod}
+    namespace: n8n
+    keda: existing
+    load_balancer_controller: existing
+
+network:
+  vpc:
+    kind: existing
+    id: vpc-0a1b2c3d4e5f60718
+    private_subnets: [subnet-0aaa1111, subnet-0bbb2222]
+    public_subnets: [subnet-0ddd4444, subnet-0eee5555]
+
+database:
+  kind: external
+  host: pg.platform.internal
+  credentials: {secret: platform/pg/n8n}
+  ssl: require
+
+queue:
+  kind: external
+  host: redis.platform.internal
+  tls: true
+  auth: {secret: platform/redis/n8n}
+  key_prefix: n8n-prod
+
+storage:
+  bucket: {kind: create}
+  binary_data: s3
+
+ingress:
+  domain: n8n.k8s.example.com
+  hosted_zone: {kind: lookup, name: k8s.example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: alb-oidc
+  oidc:
+    issuer: https://example.okta.com
+    client_id: 0oa1example
+    client_secret: {secret: platform/okta/n8n}

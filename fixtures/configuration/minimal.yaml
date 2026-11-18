@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# The smallest valid file: everything else comes from the "small" profile.
+# One n8n task on ECS Fargate (arm64) behind CloudFront (no ALB, no NAT gateway),
+# Aurora Serverless v2, new VPC. Community edition, so usage must be declared.
+#   n8n-on-aws deploy -f fixtures/configuration/minimal.yaml --dry-run
+apiVersion: n8n-on-aws/v1
+name: n8n-minimal
+n8n:
+  license:
+    usage: {purpose: internal-business, accept_sustainable_use_license: true}

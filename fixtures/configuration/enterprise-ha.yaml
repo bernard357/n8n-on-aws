@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# n8n Enterprise, highly available: two main replicas (multi-main, sticky sessions),
+# webhook and worker tiers on Fargate, provisioned Aurora Multi-AZ, customer-managed KMS key,
+# binary and execution data in S3, n8n's own OIDC SSO, cross-region backups.
+apiVersion: n8n-on-aws/v1
+name: n8n-ha
+profile: xlarge
+
+aws:
+  region: eu-central-1
+  tags: {owner: platform, data-classification: internal}
+  permissions_boundary: arn:aws:iam::123456789012:policy/platform-boundary
+  kms_key: {kind: create}
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: enterprise
+    activation_key: {secret: n8n/license}
+  encryption_key: {kind: existing, secret: n8n/encryption-key}
+  metrics: true
+
+topology:
+  mode: multi-main
+  main: {replicas: 2, cpu: 2048, memory: 4096}
+  webhook: {min: 2, max: 10, cpu: 1024, memory: 2048}
+  workers: {min: 4, max: 40, cpu: 2048, memory: 4096, concurrency: 10}
+
+network:
+  vpc: {kind: create, cidr: 10.82.0.0/16, azs: 3, nat: per-az,
+        endpoints: [s3, ecr, logs, secretsmanager, sts]}
+
+database:
+  kind: aurora
+  instance_class: db.r7g.large
+  instances: 2
+  io_optimized: true
+  backup_retention_days: 35
+
+queue:
+  kind: elasticache
+  node_type: cache.r7g.large
+  replicas: 2
+
+storage:
+  bucket: {kind: create, binary_expiry_days: 90}
+  binary_data: s3
+  execution_data: s3
+
+ingress:
+  domain: n8n.corp.example.com
+  hosted_zone: {kind: existing, id: Z0123456789ABCDEFGHIJ, name: corp.example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: none            # n8n enforces login itself through SSO
+  n8n_sso:
+    kind: oidc
+    discovery_endpoint: https://idp.corp.example.com/.well-known/openid-configuration
+    client_id: n8n
+    client_secret: {secret: n8n/oidc-client-secret}
+    role_provisioning: instance_and_project_roles
+
+observability:
+  container_insights: true
+  prometheus: amp
+  alarms: {email: [platform-oncall@example.com]}
+
+backup:
+  kind: aws-backup
+  retention_days: 35
+  cross_region: eu-west-1

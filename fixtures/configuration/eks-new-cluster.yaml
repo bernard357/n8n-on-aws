@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Greenfield Kubernetes: a new EKS Auto Mode cluster dedicated to n8n,
+# official Helm chart, KEDA installed by us, Aurora Serverless and ElastiCache Serverless.
+apiVersion: n8n-on-aws/v1
+name: n8n-eks
+profile: medium
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: community
+    usage: {purpose: internal-business, accept_sustainable_use_license: true}
+
+topology:
+  mode: queue
+
+runtime:
+  platform: eks
+  eks:
+    cluster:
+      kind: create
+      version: "1.34"
+      compute: auto
+      admin_role_arns: [arn:aws:iam::123456789012:role/Admin]
+
+ingress:
+  domain: n8n.example.com
+  hosted_zone: {kind: lookup, name: example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: alb-cognito

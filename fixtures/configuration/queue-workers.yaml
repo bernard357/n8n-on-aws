@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Queue mode: one main, workers autoscaled on queue depth (on Fargate Spot),
+# Valkey on ElastiCache Serverless, binary data in S3 (Business license),
+# and an S3 prefix that workflows can use for heavy data exchange.
+apiVersion: n8n-on-aws/v1
+name: n8n-queue
+profile: medium
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: business
+    activation_key: {secret: n8n/license}
+    usage: {purpose: internal-business, employees: 60}
+  metrics: true
+
+finops:
+  budget: {monthly_usd: 300, alert_emails: [platform@example.com]}
+  anomaly_detection: true
+
+topology:
+  mode: queue
+  workers:
+    min: 1
+    max: 8
+    concurrency: 10
+    scale_on: queue-depth
+    target: 20
+    spot: true
+
+database:
+  kind: aurora-serverless
+  min_acu: 0.5
+  max_acu: 8
+
+queue:
+  kind: elasticache-serverless
+
+storage:
+  bucket: {kind: create, binary_expiry_days: 30}
+  binary_data: s3
+  exchange: {enabled: true, prefix: exchange/, expiry_days: 7}
+
+ingress:
+  domain: n8n.example.com
+  hosted_zone: {kind: lookup, name: example.com}
+  certificate: {kind: create}
+
+auth:
+  mode: alb-oidc
+  oidc:
+    issuer: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
+    client_id: 11111111-2222-3333-4444-555555555555
+    client_secret: {secret: n8n/entra-client-secret}
