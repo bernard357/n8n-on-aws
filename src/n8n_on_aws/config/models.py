@@ -103,7 +103,7 @@ EncryptionKey = Annotated[
 
 class Runners(Strict):
     mode: Literal["external", "internal"] = "external"
-    image: str = "docker.n8n.io/n8nio/runners"
+    image: str = "n8nio/runners"
     max_concurrency: int = Field(5, ge=1)
 
 

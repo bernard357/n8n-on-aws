@@ -12,6 +12,14 @@
     that keeps webhook paths open; regional WAF
   - CloudFront to the ALB (VPC origin) or straight to the task (no ALB, no NAT)
   - budgets, cost anomaly alerts, office-hours schedules, alarms
+- Smoke-tested `minimal` on a real account, which surfaced these fixes:
+  - the runners sidecar image is pulled from Docker Hub (`n8nio/runners`), because
+    `docker.n8n.io` does not serve it
+  - ECS services are deleted before the cluster's capacity provider association, which
+    otherwise blocks rollbacks and deletes
+  - n8n 2.30 and later get `N8N_WEBHOOK_URL` only, not the deprecated `WEBHOOK_URL`
+  - Lambda log groups are created with the stacks and deleted with them
+  - `deploy` lists the regions that need a CDK bootstrap
 - `deploy --dry-run` synthesizes locally. `deploy`, `diff` and `destroy` run the CDK CLI.
 - Existing VPCs now list their `availability_zones`. `auth.oidc` lists the provider
   endpoints the ALB needs.

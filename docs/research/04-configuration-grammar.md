@@ -76,7 +76,7 @@ n8n:
     secret: str                                # kind=existing
   runners:
     mode: external | internal = external       # internal is deprecated in 2.x
-    image: str = docker.n8n.io/n8nio/runners
+    image: str = n8nio/runners
     max_concurrency: int = 5
   executions:
     timeout_seconds: int = -1

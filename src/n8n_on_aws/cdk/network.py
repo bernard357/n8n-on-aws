@@ -6,6 +6,7 @@ from typing import Any
 
 import aws_cdk as cdk
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_logs as logs
 from aws_cdk import custom_resources as cr
 from constructs import Construct
 
@@ -154,6 +155,12 @@ class NetworkStack(cdk.Stack):
                 resources=cr.AwsCustomResourcePolicy.ANY_RESOURCE
             ),
             install_latest_aws_sdk=False,
+            log_group=logs.LogGroup(
+                self,
+                "CloudFrontPrefixListLogs",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
         )
         return lookup.get_response_field("PrefixLists.0.PrefixListId")
 

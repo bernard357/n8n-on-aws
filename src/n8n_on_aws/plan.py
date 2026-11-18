@@ -89,7 +89,6 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
         "N8N_PORT": "5678",
         "N8N_PROTOCOL": protocol,
         "N8N_EDITOR_BASE_URL": url,
-        "WEBHOOK_URL": url,
         "N8N_PROXY_HOPS": str(_proxy_hops(d)),
         "GENERIC_TIMEZONE": n8n.timezone,
         "TZ": n8n.timezone,
@@ -105,8 +104,11 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
         "N8N_PUBLIC_API_DISABLED": "false" if n8n.public_api else "true",
         "N8N_METRICS": "true" if n8n.metrics else "false",
     }
+    # N8N_WEBHOOK_URL replaces the deprecated WEBHOOK_URL from n8n 2.30.0.
     version = parse_version(n8n.version)
-    if version is None or version >= (2, 30, 0):
+    if version is not None and version < (2, 30, 0):
+        env["WEBHOOK_URL"] = url
+    else:
         env["N8N_WEBHOOK_URL"] = url
     secrets: dict[str, SecretRef] = {
         "N8N_ENCRYPTION_KEY": SecretRef(

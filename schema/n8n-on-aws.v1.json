@@ -2053,7 +2053,7 @@
           "type": "string"
         },
         "image": {
-          "default": "docker.n8n.io/n8nio/runners",
+          "default": "n8nio/runners",
           "title": "Image",
           "type": "string"
         },

@@ -195,11 +195,23 @@ def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
         )
         return EXIT_USAGE
     command = cdk_command(verb, args, result.deployment.name)
+    if verb == "deploy":
+        from .cdk import bootstrap_regions
+
+        regions = bootstrap_regions(result.deployment)
+        print(
+            "note: the CDK must be bootstrapped in "
+            + ", ".join(regions)
+            + " (npx aws-cdk@2 bootstrap aws://ACCOUNT/REGION)",
+            file=out,
+        )
     print("$ " + shlex.join(command), file=out)
     if verb == "destroy":
         print(
-            "note: the encryption key secret, the database snapshot, the bucket and "
-            "EFS are retained outside dev environments",
+            "note: the encryption key secret is always retained (delete it yourself "
+            "only if no backup needs it); the database snapshot, the bucket and EFS "
+            "are retained outside dev environments; CDK's own default-security-group "
+            "Lambda leaves a log group under /aws/lambda/<name>-network-",
             file=out,
         )
     out.flush()

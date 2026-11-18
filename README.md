@@ -11,9 +11,11 @@ n8n-on-aws deploy -f fixtures/configuration/minimal.yaml
 ```
 
 > Status: the configuration model, the rule engine (topology, n8n licensing, FinOps) and
-> CDK synthesis on **ECS Fargate** work. `deploy --dry-run` writes the CloudFormation
-> templates locally. `deploy`, `diff` and `destroy` drive the CDK CLI, but have not yet
-> been run against a real AWS account. See the [roadmap](#roadmap).
+> CDK synthesis on **ECS Fargate** work. `minimal.yaml` was deployed to a real account
+> (eu-west-3, n8n 2.48.5): n8n served its editor through CloudFront, connected to Aurora
+> over verified TLS, and registered its JavaScript and Python task runners. Then it was
+> destroyed. The other shapes are synthesized and asserted in tests, but not yet
+> deployed. See the [roadmap](#roadmap).
 
 ## Quick start (from source)
 
@@ -41,6 +43,8 @@ region (`npx aws-cdk@2 bootstrap`, plus `us-east-1` when CloudFront needs a cert
 .venv/bin/n8n-on-aws deploy -f my-n8n.yaml
 .venv/bin/n8n-on-aws destroy -f my-n8n.yaml
 ```
+
+CDK assets live in the bootstrap stack (`CDKToolkit`). It is not removed by `destroy`.
 
 The deployment is split into stacks: `<name>-network`, `<name>-data`, `<name>-n8n`, and
 `<name>-edge` in us-east-1 when needed. The encryption key secret, database snapshots,
@@ -82,7 +86,8 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 |---|---|
 | Configuration model, profiles, licence and FinOps rules | ✅ [#1](https://github.com/bernard357/n8n-on-aws/issues/1) |
 | ECS Fargate: network, data, services, ALB, CloudFront (ALB or task origin), Cognito and OIDC on the ALB, budgets, schedules | ✅ [#2](https://github.com/bernard357/n8n-on-aws/issues/2) |
-| First deployment of each ECS sample against a real account | next |
+| Smoke test of `minimal` (CloudFront to task, Aurora Serverless, runners) on a real account | ✅ |
+| Smoke tests of the ALB, Cognito, queue and multi-main shapes | next |
 | Cognito at the edge (`cloudfront-cognito`), WAF and IP allow-list on CloudFront | planned |
 | Worker scaling on queue depth | planned (CPU scaling meanwhile) |
 | `n8n-on-aws init` assistant | planned |

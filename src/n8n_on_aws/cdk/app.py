@@ -48,6 +48,18 @@ def environment(d: Deployment) -> cdk.Environment:
     return cdk.Environment(account=account, region=region)
 
 
+def bootstrap_regions(d: Deployment) -> list[str]:
+    """Regions where the stacks of ``d`` are deployed, hence need a CDK bootstrap."""
+    region = environment(d).region
+    assert region is not None
+    regions = [region]
+    if region != EDGE_REGION and (
+        needs_edge_certificate(d) or needs_anomaly_monitor(d)
+    ):
+        regions.append(EDGE_REGION)
+    return regions
+
+
 def build_app(
     d: Deployment, outdir: str | Path | None = None
 ) -> tuple[cdk.App | None, list[Finding]]:

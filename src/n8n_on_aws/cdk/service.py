@@ -483,6 +483,10 @@ class ServiceStack(cdk.Stack):
             if role.name in self.target_groups
             else None,
         )
+        # Delete services before the cluster's capacity provider association,
+        # otherwise CloudFormation fails with "capacity provider is in use".
+        if isinstance(self.cluster, ecs.Cluster):
+            service.node.add_dependency(self.cluster)
         target_group = self.target_groups.get(role.name)
         if target_group is not None:
             service.attach_to_application_target_group(target_group)
@@ -827,6 +831,7 @@ class ServiceStack(cdk.Stack):
         function = lambda_.Function(
             self,
             "OriginUpdater",
+            log_group=self._function_logs("OriginUpdaterLogs"),
             runtime=lambda_.Runtime.PYTHON_3_13,
             architecture=lambda_.Architecture.ARM_64,
             handler="index.handler",
@@ -880,7 +885,12 @@ class ServiceStack(cdk.Stack):
             ),
             targets=[targets.LambdaFunction(function)],
         )
-        provider = cr.Provider(self, "OriginUpdaterProvider", on_event_handler=function)
+        provider = cr.Provider(
+            self,
+            "OriginUpdaterProvider",
+            on_event_handler=function,
+            log_group=self._function_logs("OriginUpdaterProviderLogs"),
+        )
         fingerprint = hashlib.sha256(
             self.d.model_dump_json(by_alias=True).encode()
         ).hexdigest()
@@ -892,6 +902,15 @@ class ServiceStack(cdk.Stack):
         )
         update.node.add_dependency(main)
         update.node.add_dependency(distribution)
+
+    def _function_logs(self, construct_id: str) -> logs.LogGroup:
+        """A log group deleted with the stack, unlike Lambda's implicit ones."""
+        return logs.LogGroup(
+            self,
+            construct_id,
+            retention=logs.RetentionDays.ONE_WEEK,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
 
     # ---------------------------------------------------------- operations
 

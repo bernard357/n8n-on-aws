@@ -183,3 +183,14 @@ def test_cli_schema_matches_committed(tmp_path: Path) -> None:
     assert code == 0
     committed = FIXTURES.parent.parent / "schema" / "n8n-on-aws.v1.json"
     assert json.loads(target.read_text()) == json.loads(committed.read_text())
+
+
+def test_plan_webhook_url_variable_follows_version() -> None:
+    recent = check({"n8n": {"version": "2.48.5"}})
+    assert recent.deployment is not None
+    env = build_plan(recent.deployment).roles[0].env
+    assert "N8N_WEBHOOK_URL" in env and "WEBHOOK_URL" not in env
+    older = check({"n8n": {"version": "2.20.0"}})
+    assert older.deployment is not None
+    env = build_plan(older.deployment).roles[0].env
+    assert "WEBHOOK_URL" in env and "N8N_WEBHOOK_URL" not in env

@@ -113,7 +113,7 @@ def test_minimal_task_has_runner_sidecar_and_ca_init() -> None:
     main = defs["n8n-minimal-main"][0]
     assert main["Image"] == "docker.n8n.io/n8nio/n8n:stable"
     runner = defs["n8n-minimal-main"][2]
-    assert runner["Image"] == "docker.n8n.io/n8nio/runners:stable"
+    assert runner["Image"] == "n8nio/runners:stable"
     secret_names = {s["Name"] for s in main["Secrets"]}
     assert {"N8N_ENCRYPTION_KEY", "DB_POSTGRESDB_PASSWORD"} <= secret_names
 
@@ -476,3 +476,23 @@ def test_cli_deploy_runs_cdk(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_log_retention_follows_configuration() -> None:
     t = sample("minimal")["n8n"]
     t.has_resource_properties("AWS::Logs::LogGroup", {"RetentionInDays": 30})
+
+
+def test_bootstrap_regions_include_edge_when_needed() -> None:
+    from n8n_on_aws.cdk import bootstrap_regions
+
+    plain = check({"aws": {"region": "eu-west-3"}})
+    assert plain.deployment is not None
+    assert bootstrap_regions(plain.deployment) == ["eu-west-3"]
+    edge = check(
+        {
+            "aws": {"region": "eu-west-3"},
+            "ingress": {
+                "kind": "cloudfront",
+                "cloudfront": {"origin": "alb"},
+                **DOMAIN,
+            },
+        }
+    )
+    assert edge.deployment is not None
+    assert bootstrap_regions(edge.deployment) == ["eu-west-3", "us-east-1"]
