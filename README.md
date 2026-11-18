@@ -11,8 +11,9 @@ n8n-on-aws deploy -f fixtures/configuration/minimal.yaml
 ```
 
 > Status: the configuration model, the rule engine (topology, n8n licensing, FinOps) and
-> `validate` / `plan` / `deploy --dry-run` work. CDK synthesis and the `init` assistant
-> are next.
+> CDK synthesis on **ECS Fargate** work. `deploy --dry-run` writes the CloudFormation
+> templates locally. `deploy`, `diff` and `destroy` drive the CDK CLI, but have not yet
+> been run against a real AWS account. See the [roadmap](#roadmap).
 
 ## Quick start (from source)
 
@@ -21,13 +22,31 @@ git clone https://github.com/bernard357/n8n-on-aws.git && cd n8n-on-aws
 make setup
 .venv/bin/n8n-on-aws validate -f fixtures/configuration/nano.yaml
 .venv/bin/n8n-on-aws plan -f fixtures/configuration/queue-workers.yaml --show-env
-.venv/bin/n8n-on-aws deploy -f fixtures/configuration/minimal.yaml --dry-run
+.venv/bin/n8n-on-aws deploy -f fixtures/configuration/enterprise-ha.yaml --dry-run
 .venv/bin/n8n-on-aws validate -f fixtures/configuration/minimal.yaml --set topology.mode=multi-main
 ```
 
 The last command fails on purpose: multi-main needs the n8n Enterprise edition. Every
-finding has a stable code: `S` schema, `T` topology, `L` licence, `F` FinOps. Point your
-editor at [schema/n8n-on-aws.v1.json](schema/n8n-on-aws.v1.json) for completion.
+finding has a stable code: `S` schema, `T` topology, `L` licence, `F` FinOps, `C`
+synthesis. Point your editor at [schema/n8n-on-aws.v1.json](schema/n8n-on-aws.v1.json)
+for completion.
+
+## Deploying
+
+You need Node.js (for `npx aws-cdk@2`), AWS credentials, and a bootstrapped account and
+region (`npx aws-cdk@2 bootstrap`, plus `us-east-1` when CloudFront needs a certificate).
+
+```bash
+.venv/bin/n8n-on-aws diff -f my-n8n.yaml
+.venv/bin/n8n-on-aws deploy -f my-n8n.yaml
+.venv/bin/n8n-on-aws destroy -f my-n8n.yaml
+```
+
+The deployment is split into stacks: `<name>-network`, `<name>-data`, `<name>-n8n`, and
+`<name>-edge` in us-east-1 when needed. The encryption key secret, database snapshots,
+the bucket and EFS are retained when stacks are deleted, except with `environment: dev`.
+After the first deployment, open the URL printed as the `Url` output and create the n8n
+owner account.
 
 ## Research and design
 
@@ -56,3 +75,19 @@ From smallest to largest, in [fixtures/configuration](fixtures/configuration):
 | `eks-existing-cluster.yaml` | Existing EKS cluster, external PostgreSQL and Redis |
 
 The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
+
+## Roadmap
+
+| Area | Status |
+|---|---|
+| Configuration model, profiles, licence and FinOps rules | ✅ [#1](https://github.com/bernard357/n8n-on-aws/issues/1) |
+| ECS Fargate: network, data, services, ALB, CloudFront (ALB or task origin), Cognito and OIDC on the ALB, budgets, schedules | ✅ [#2](https://github.com/bernard357/n8n-on-aws/issues/2) |
+| First deployment of each ECS sample against a real account | next |
+| Cognito at the edge (`cloudfront-cognito`), WAF and IP allow-list on CloudFront | planned |
+| Worker scaling on queue depth | planned (CPU scaling meanwhile) |
+| `n8n-on-aws init` assistant | planned |
+| ECS on EC2 capacity, EKS (official Helm chart) | planned |
+| Cost estimate in `plan`, cross-region backups, Prometheus | planned |
+
+Samples that use a planned feature (`nano`, `small-team`, `split-webhooks`, and the EKS
+ones) validate and plan, but synthesis stops with a `C1` finding that names the feature.

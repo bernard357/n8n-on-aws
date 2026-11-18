@@ -30,6 +30,7 @@ network:
   vpc:
     kind: existing
     id: vpc-0a1b2c3d4e5f60718
+    availability_zones: [eu-west-1a, eu-west-1b, eu-west-1c]
     private_subnets: [subnet-0aaa1111, subnet-0bbb2222, subnet-0ccc3333]
     public_subnets: [subnet-0ddd4444, subnet-0eee5555, subnet-0fff6666]
 

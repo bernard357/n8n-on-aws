@@ -175,12 +175,12 @@ def eks_needs_domain(d: Deployment) -> Iterator[Finding]:
 def auth_wrappers(d: Deployment) -> Iterator[Finding]:
     mode = d.auth.mode
     if mode in ("alb-cognito", "alb-oidc"):
-        if not d.has_alb:
+        if d.ingress.kind != "alb":
             yield _error(
                 "T6",
                 "auth.mode",
-                f"{mode} is enforced by the ALB, and this deployment has none",
-                "use cloudfront-cognito, or ingress.kind alb",
+                f"{mode} is enforced by an internet-facing ALB listener on HTTPS",
+                "use cloudfront-cognito with CloudFront, or ingress.kind alb",
             )
         if not d.ingress.domain:
             yield _error(
@@ -196,6 +196,23 @@ def auth_wrappers(d: Deployment) -> Iterator[Finding]:
             "auth.mode",
             "cloudfront-cognito needs ingress.kind cloudfront",
             "use alb-cognito with an ALB",
+        )
+    if mode == "ip-allowlist" and "0.0.0.0/0" in d.ingress.allowed_cidrs:
+        yield _error(
+            "T6",
+            "ingress.allowed_cidrs",
+            "ip-allowlist needs ingress.allowed_cidrs narrower than 0.0.0.0/0",
+        )
+    certificate = d.ingress.certificate
+    if (
+        d.ingress.kind == "cloudfront"
+        and certificate.kind == "existing"
+        and ":us-east-1:" not in certificate.arn
+    ):
+        yield _error(
+            "T6",
+            "ingress.certificate.arn",
+            "CloudFront only uses ACM certificates from us-east-1",
         )
 
 

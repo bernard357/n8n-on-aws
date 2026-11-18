@@ -268,8 +268,22 @@ class CreatedVpc(Strict):
 class ExistingVpc(Strict):
     kind: Literal["existing"]
     id: str = Field(pattern=r"^vpc-[0-9a-f]+$")
+    availability_zones: list[str] = Field(
+        min_length=2, description="AZs of the subnets, in the same order"
+    )
     private_subnets: list[str] = Field(min_length=2)
     public_subnets: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _one_subnet_per_az(self) -> ExistingVpc:
+        azs = len(self.availability_zones)
+        for label, subnets in (
+            ("private_subnets", self.private_subnets),
+            ("public_subnets", self.public_subnets),
+        ):
+            if subnets and len(subnets) % azs:
+                raise ValueError(f"{label} must list one subnet per availability zone")
+        return self
 
 
 Vpc = Annotated[CreatedVpc | ExistingVpc, Field(discriminator="kind")]
@@ -399,7 +413,12 @@ Cognito = Annotated[CreatedCognito | ExistingCognito, Field(discriminator="kind"
 
 
 class Oidc(Strict):
+    """An OIDC identity provider for the ALB authenticate-oidc action."""
+
     issuer: str
+    authorization_endpoint: str
+    token_endpoint: str
+    user_info_endpoint: str
     client_id: str
     client_secret: SecretRef
     scope: str = "openid email"

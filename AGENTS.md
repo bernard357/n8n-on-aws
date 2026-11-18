@@ -35,6 +35,11 @@ keep validating.
 - **Rules have stable codes**: `S` schema, `T` topology and AWS, `L` licence, `F`
   FinOps, `P` plan. Every rule has a failing-input test in `tests/test_rules.py`.
 - **n8n licence terms live in one file**, `config/licensing.py`. Correct them there.
+- **CDK code lives in `src/n8n_on_aws/cdk/`.** Tests synthesize in-process and assert
+  on templates (`tests/test_synth.py`). A test must never run the real `npx cdk deploy`:
+  patch `subprocess.call`. A real deployment needs the maintainer's explicit go-ahead.
+- **Not-yet-synthesized features** are declared in `cdk/support.py` as `C1` findings,
+  never as silent omissions.
 - **`plan.py` is pure**: no AWS calls, no CDK imports. Values known only at deploy time
   are `${placeholders}`.
 - **Inject an optional boto3 `session`** in any future AWS-calling function.

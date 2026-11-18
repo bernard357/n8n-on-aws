@@ -1122,6 +1122,15 @@
           "title": "Id",
           "type": "string"
         },
+        "availability_zones": {
+          "description": "AZs of the subnets, in the same order",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Availability Zones",
+          "type": "array"
+        },
         "private_subnets": {
           "items": {
             "type": "string"
@@ -1141,6 +1150,7 @@
       "required": [
         "kind",
         "id",
+        "availability_zones",
         "private_subnets"
       ],
       "title": "ExistingVpc",
@@ -1865,9 +1875,22 @@
     },
     "Oidc": {
       "additionalProperties": false,
+      "description": "An OIDC identity provider for the ALB authenticate-oidc action.",
       "properties": {
         "issuer": {
           "title": "Issuer",
+          "type": "string"
+        },
+        "authorization_endpoint": {
+          "title": "Authorization Endpoint",
+          "type": "string"
+        },
+        "token_endpoint": {
+          "title": "Token Endpoint",
+          "type": "string"
+        },
+        "user_info_endpoint": {
+          "title": "User Info Endpoint",
           "type": "string"
         },
         "client_id": {
@@ -1885,6 +1908,9 @@
       },
       "required": [
         "issuer",
+        "authorization_endpoint",
+        "token_endpoint",
+        "user_info_endpoint",
         "client_id",
         "client_secret"
       ],

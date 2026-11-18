@@ -50,5 +50,8 @@ auth:
   mode: alb-oidc
   oidc:
     issuer: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
+    authorization_endpoint: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/oauth2/v2.0/authorize
+    token_endpoint: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/oauth2/v2.0/token
+    user_info_endpoint: https://graph.microsoft.com/oidc/userinfo
     client_id: 11111111-2222-3333-4444-555555555555
     client_secret: {secret: n8n/entra-client-secret}

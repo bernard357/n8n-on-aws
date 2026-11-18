@@ -157,7 +157,12 @@ def test_t9_domain_needs_certificate() -> None:
 
 
 def test_t10_existing_vpc_needs_public_subnets() -> None:
-    vpc = {"kind": "existing", "id": "vpc-0abc", "private_subnets": ["a", "b"]}
+    vpc = {
+        "kind": "existing",
+        "id": "vpc-0abc",
+        "availability_zones": ["x1a", "x1b"],
+        "private_subnets": ["a", "b"],
+    }
     result = check({"network": {"vpc": vpc}})
     assert "T10" in codes(result)
 
@@ -286,6 +291,7 @@ def test_l9_existing_vpc_reminds_licence_egress() -> None:
     vpc = {
         "kind": "existing",
         "id": "vpc-0abc",
+        "availability_zones": ["x1a", "x1b"],
         "private_subnets": ["a", "b"],
         "public_subnets": ["c", "d"],
     }

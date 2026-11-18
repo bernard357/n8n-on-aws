@@ -134,16 +134,12 @@ def run(*argv: str) -> tuple[int, str]:
     return code, out.getvalue()
 
 
-def test_cli_dry_run_minimal() -> None:
-    code, text = run("deploy", "-f", str(FIXTURES / "minimal.yaml"), "--dry-run")
+def test_cli_dry_run_minimal(tmp_path: Path) -> None:
+    path = str(FIXTURES / "minimal.yaml")
+    code, text = run("deploy", "-f", path, "--dry-run", "-o", str(tmp_path))
     assert code == 0
-    assert "Dry run: nothing was deployed" in text
+    assert "nothing was deployed" in text
     assert "n8n start" in text
-
-
-def test_cli_deploy_without_dry_run_is_refused() -> None:
-    code, _ = run("deploy", "-f", str(FIXTURES / "minimal.yaml"))
-    assert code == 2
 
 
 def test_cli_validate_reports_errors(tmp_path: Path) -> None:

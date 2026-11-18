@@ -126,8 +126,7 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
 
     database = d.database
     if database.kind == "sqlite":
-        env["DB_TYPE"] = "sqlite"
-        env["N8N_USER_FOLDER"] = "/home/node/.n8n"
+        env["DB_TYPE"] = "sqlite"  # under /home/node/.n8n, on EFS
     else:
         env["DB_TYPE"] = "postgresdb"
         env["DB_POSTGRESDB_POOL_SIZE"] = str(database.pool_size)

@@ -131,7 +131,8 @@ network:
     # kind=existing
     # kind: existing
     # id: vpc-...
-    # private_subnets: [subnet-...]           # ! ≥ 2 AZs
+    # availability_zones: [eu-west-1a, eu-west-1b]   # ! same order as the subnets
+    # private_subnets: [subnet-...]           # ! one per AZ
     # public_subnets: [subnet-...]            # ! when ingress.public and no CloudFront-only origin
 
 ingress:
@@ -161,7 +162,14 @@ auth:
     user_pool_id: str
     client_id: str
     domain: str
-  oidc: {issuer: str, client_id: str, client_secret: {secret: str}, scope: str = openid email}  # alb-oidc
+  oidc:                                       # alb-oidc
+    issuer: str
+    authorization_endpoint: str
+    token_endpoint: str
+    user_info_endpoint: str
+    client_id: str
+    client_secret: {secret: str, key: str?}
+    scope: str = openid email
   public_paths: [str] = []                    # added to the built-in bypass list
   session_hours: int = 12
   n8n_sso:                                    # n8n's own SSO, Business/Enterprise

@@ -22,6 +22,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "aws-cdk-lib>=2.200,<3",
+    "constructs>=10,<11",
     "pydantic>=2.7,<3",
     "pyyaml>=6",
 ]

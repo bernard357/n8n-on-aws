@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -118,17 +121,97 @@ def cmd_plan(args: argparse.Namespace, out: TextIO) -> int:
 
 def cmd_deploy(args: argparse.Namespace, out: TextIO) -> int:
     if not args.dry_run:
-        print(
-            "error: deployment to AWS is not implemented yet; "
-            "use --dry-run to validate and plan",
-            file=sys.stderr,
-        )
-        return EXIT_USAGE
+        return _run_cdk("deploy", args, out)
     args.format = "text"
     code = cmd_plan(args, out)
-    if code == EXIT_OK:
-        print("\nDry run: nothing was deployed and no AWS API was called.", file=out)
-    return code
+    if code != EXIT_OK:
+        return code
+    result = load(args.file, args.set)
+    assert result.deployment is not None
+    from .cdk import synthesize  # CDK starts a Node.js process: import lazily
+
+    deployment = result.deployment
+    outdir = Path(args.output or f"cdk.out/{deployment.name}")
+    stacks, findings = synthesize(deployment, outdir)
+    if findings:
+        print("  synthesis notes:", file=out)
+        _print_findings(findings, out)
+    if any(f.level == "error" for f in findings):
+        return EXIT_INVALID
+    print("\nStacks:", file=out)
+    for stack in stacks:
+        total = sum(stack.resources.values())
+        print(f"  - {stack.name} ({stack.region}): {total} resources", file=out)
+        for kind, count in stack.resources.items():
+            print(f"      {count:>3} {kind}", file=out)
+    print(
+        f"\nDry run: templates written to {outdir}; nothing was deployed and "
+        "no AWS API was called.",
+        file=out,
+    )
+    return EXIT_OK
+
+
+def cdk_command(verb: str, args: argparse.Namespace, name: str) -> list[str]:
+    """The CDK CLI command line for ``verb`` (deploy, diff, destroy)."""
+    app = [sys.executable, "-m", "n8n_on_aws.cdk", "-f", str(Path(args.file).resolve())]
+    for assignment in args.set:
+        app += ["--set", assignment]
+    command = [
+        "npx",
+        "--yes",
+        "aws-cdk@2",
+        verb,
+        "--all",
+        "--app",
+        shlex.join(app),
+        "--output",
+        f"cdk.out/{name}",
+    ]
+    if verb == "deploy":
+        approval = "never" if args.yes else "broadening"
+        command += ["--require-approval", approval]
+    if verb == "destroy" and args.yes:
+        command.append("--force")
+    return command
+
+
+def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
+    result = _load(args, out)
+    if result is None:
+        return EXIT_USAGE
+    if not result.ok or result.deployment is None:
+        _summary(args.file, result, out)
+        return EXIT_INVALID
+    from .cdk import synthesis_findings
+
+    blocking = [f for f in synthesis_findings(result.deployment) if f.level == "error"]
+    if blocking:
+        _print_findings(blocking, out)
+        return EXIT_INVALID
+    if shutil.which("npx") is None:
+        print(
+            "error: npx not found; install Node.js to run the CDK CLI", file=sys.stderr
+        )
+        return EXIT_USAGE
+    command = cdk_command(verb, args, result.deployment.name)
+    print("$ " + shlex.join(command), file=out)
+    if verb == "destroy":
+        print(
+            "note: the encryption key secret, the database snapshot, the bucket and "
+            "EFS are retained outside dev environments",
+            file=out,
+        )
+    out.flush()
+    return subprocess.call(command)
+
+
+def cmd_diff(args: argparse.Namespace, out: TextIO) -> int:
+    return _run_cdk("diff", args, out)
+
+
+def cmd_destroy(args: argparse.Namespace, out: TextIO) -> int:
+    return _run_cdk("destroy", args, out)
 
 
 def cmd_schema(args: argparse.Namespace, out: TextIO) -> int:
@@ -171,11 +254,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", choices=["text", "json"], default="text")
     p.set_defaults(func=cmd_plan)
 
-    p = sub.add_parser("deploy", help="deploy to AWS (only --dry-run for now)")
+    p = sub.add_parser("deploy", help="deploy to AWS with the CDK CLI")
     with_file(p)
-    p.add_argument("--dry-run", action="store_true", help="validate and plan only")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate, plan and synthesize locally; no AWS call",
+    )
     p.add_argument("--show-env", action="store_true", help="print n8n variables")
+    p.add_argument("-o", "--output", help="where to write templates (dry run)")
+    p.add_argument(
+        "--yes", action="store_true", help="do not ask to approve IAM changes"
+    )
     p.set_defaults(func=cmd_deploy)
+
+    p = sub.add_parser("diff", help="compare with the deployed stacks")
+    with_file(p)
+    p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser("destroy", help="delete the stacks (data is retained)")
+    with_file(p)
+    p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    p.set_defaults(func=cmd_destroy)
 
     p = sub.add_parser("schema", help="print the JSON Schema of the file")
     p.add_argument("-o", "--output", help="write to this file")
