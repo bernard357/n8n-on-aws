@@ -64,7 +64,7 @@ Aurora DSQL is **excluded**: it is not compatible enough with PostgreSQL for n8n
 
 | Option | Notes |
 |---|---|
-| `elasticache-serverless` (**default** for create) | Valkey, TLS mandatory (`QUEUE_BULL_REDIS_TLS=true`). It exposes a cluster-mode endpoint, so BullMQ needs a hash-tagged prefix (`QUEUE_BULL_PREFIX={n8n}`) and probably `QUEUE_BULL_REDIS_CLUSTER_NODES`. **⚠ verify** with n8n before making it the default; fall back to `elasticache` otherwise. |
+| `elasticache-serverless` (**default** for create) | Valkey, TLS mandatory (`QUEUE_BULL_REDIS_TLS=true`). Its endpoint is a proxy that n8n reaches with a plain client (`QUEUE_BULL_REDIS_HOST`, not `QUEUE_BULL_REDIS_CLUSTER_NODES`: n8n's cluster client fails over TLS with "Failed to refresh slots cache", found by the #3 smoke test). Keys still live in slots, so BullMQ needs a hash-tagged prefix (`QUEUE_BULL_PREFIX={n8n}`). |
 | `elasticache` | Valkey or Redis OSS node-based, cluster mode disabled, 1 primary + replicas, Multi-AZ failover |
 | `external` | Existing Redis endpoint + auth secret, TLS flag |
 

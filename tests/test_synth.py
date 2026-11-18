@@ -496,3 +496,25 @@ def test_bootstrap_regions_include_edge_when_needed() -> None:
     )
     assert edge.deployment is not None
     assert bootstrap_regions(edge.deployment) == ["eu-west-3", "us-east-1"]
+
+
+def test_container_insights_log_group_is_owned_by_the_stack() -> None:
+    t = synth({"observability": {"container_insights": True}})["n8n"]
+    t.has_resource(
+        "AWS::Logs::LogGroup",
+        {
+            "Properties": {
+                "LogGroupName": "/aws/ecs/containerinsights/n8n-test/performance",
+                "RetentionInDays": 30,
+            },
+            "DeletionPolicy": "Delete",
+        },
+    )
+
+
+def test_prefix_list_lookup_is_deleted_before_its_log_group() -> None:
+    t = sample("minimal")["network"]
+    lookups = t.find_resources("Custom::AWS")
+    assert lookups
+    for resource in lookups.values():
+        assert any("CloudFrontPrefixListLogs" in dep for dep in resource["DependsOn"])

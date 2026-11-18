@@ -124,6 +124,16 @@ class ServiceStack(cdk.Stack):
                 enable_fargate_capacity_providers=True,
                 container_insights_v2=insights,
             )
+            if d.observability.container_insights:
+                # ECS would create this group outside the stack and leave it behind.
+                insights_logs = logs.LogGroup(
+                    self,
+                    "ContainerInsightsLogs",
+                    log_group_name=f"/aws/ecs/containerinsights/{d.name}/performance",
+                    retention=retention(d.observability.log_retention_days),
+                    removal_policy=cdk.RemovalPolicy.DESTROY,
+                )
+                self.cluster.node.add_dependency(insights_logs)
         self.logs = logs.LogGroup(
             self,
             "Logs",

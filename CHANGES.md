@@ -13,6 +13,12 @@
   down, unhealthy targets, database capacity, CPU or storage, queue throttling or
   memory, EFS I/O limit, NAT port errors or instance status, origin-updater errors.
 - The node-based ElastiCache replication group is named `<name>-queue`.
+- Smoke test of `minimal` and a queue-mode shape (ALB, workers, ElastiCache
+  Serverless, NAT, Container Insights): every dashboard widget showed data, except
+  S3 storage metrics, which S3 reports daily and only for non-empty buckets. Fix:
+  ElastiCache Serverless is reached with n8n's plain Redis client
+  (`QUEUE_BULL_REDIS_HOST`), because its cluster client fails there over TLS and
+  workers exited with "Failed to refresh slots cache".
 - FinOps rule `F5`: dashboard and alarm costs; production without a dashboard.
 - CDK synthesis on ECS Fargate (#2):
   - created or existing VPC, with NAT none, instance, single or per-AZ

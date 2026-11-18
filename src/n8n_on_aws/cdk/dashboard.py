@@ -918,11 +918,11 @@ class DashboardBuilder:
                 self.graphs(
                     [
                         (
-                            "Bucket size (bytes, daily)",
+                            "Bucket size (bytes, reported daily once objects exist)",
                             [s3("BucketSizeBytes", "StandardStorage", "size")],
                         ),
                         (
-                            "Objects (daily)",
+                            "Objects (reported daily once objects exist)",
                             [s3("NumberOfObjects", "AllStorageTypes", "objects")],
                         ),
                     ],

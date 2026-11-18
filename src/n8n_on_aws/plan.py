@@ -182,7 +182,9 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
             env["QUEUE_BULL_REDIS_PORT"] = "6379"
             env["QUEUE_BULL_REDIS_TLS"] = "true"
             if queue.kind == "elasticache-serverless":
-                env["QUEUE_BULL_REDIS_CLUSTER_NODES"] = "${queue.endpoint}:6379"
+                # The serverless endpoint is a proxy: a plain client works, while
+                # n8n's cluster client fails over TLS ("Failed to refresh slots
+                # cache"). The hash tag keeps BullMQ's multi-key scripts in a slot.
                 env["QUEUE_BULL_PREFIX"] = "{" + queue.key_prefix + "}"
 
     binary = d.binary_mode

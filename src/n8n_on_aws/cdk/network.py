@@ -134,6 +134,12 @@ class NetworkStack(cdk.Stack):
 
     def cloudfront_prefix_list(self) -> str:
         """ID of the managed prefix list of CloudFront origin-facing addresses."""
+        log_group = logs.LogGroup(
+            self,
+            "CloudFrontPrefixListLogs",
+            retention=logs.RetentionDays.ONE_WEEK,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
         lookup = cr.AwsCustomResource(
             self,
             "CloudFrontPrefixList",
@@ -155,13 +161,10 @@ class NetworkStack(cdk.Stack):
                 resources=cr.AwsCustomResourcePolicy.ANY_RESOURCE
             ),
             install_latest_aws_sdk=False,
-            log_group=logs.LogGroup(
-                self,
-                "CloudFrontPrefixListLogs",
-                retention=logs.RetentionDays.ONE_WEEK,
-                removal_policy=cdk.RemovalPolicy.DESTROY,
-            ),
+            log_group=log_group,
         )
+        # Delete the lookup before its log group: its last run would recreate it.
+        lookup.node.add_dependency(log_group)
         return lookup.get_response_field("PrefixLists.0.PrefixListId")
 
     def _security_groups(self) -> None:

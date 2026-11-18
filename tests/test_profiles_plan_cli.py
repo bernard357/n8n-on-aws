@@ -194,3 +194,15 @@ def test_plan_webhook_url_variable_follows_version() -> None:
     assert older.deployment is not None
     env = build_plan(older.deployment).roles[0].env
     assert "WEBHOOK_URL" in env and "N8N_WEBHOOK_URL" not in env
+
+
+def test_serverless_queue_uses_a_plain_tls_client() -> None:
+    # n8n's cluster client cannot reach ElastiCache Serverless over TLS.
+    result = check({"topology": {"mode": "queue"}})
+    assert result.deployment is not None
+    plan = build_plan(result.deployment)
+    env = next(role for role in plan.roles if role.name == "worker").env
+    assert env["QUEUE_BULL_REDIS_HOST"] == "${queue.endpoint}"
+    assert env["QUEUE_BULL_REDIS_TLS"] == "true"
+    assert env["QUEUE_BULL_PREFIX"] == "{n8n}"
+    assert "QUEUE_BULL_REDIS_CLUSTER_NODES" not in env
