@@ -658,6 +658,38 @@
       "title": "CreatedVpc",
       "type": "object"
     },
+    "Dashboard": {
+      "additionalProperties": false,
+      "description": "One CloudWatch dashboard generated from the deployed resources.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "period_minutes": {
+          "default": 5,
+          "description": "Default metric period of the widgets",
+          "enum": [
+            1,
+            5,
+            15,
+            60
+          ],
+          "title": "Period Minutes",
+          "type": "integer"
+        },
+        "range": {
+          "default": "3h",
+          "description": "Time range shown when the dashboard opens, e.g. 3h, 7d",
+          "pattern": "^[1-9]\\d*[mhdw]$",
+          "title": "Range",
+          "type": "string"
+        }
+      },
+      "title": "Dashboard",
+      "type": "object"
+    },
     "Ec2Capacity": {
       "additionalProperties": false,
       "properties": {
@@ -1858,6 +1890,9 @@
         },
         "alarms": {
           "$ref": "#/$defs/Alarms"
+        },
+        "dashboard": {
+          "$ref": "#/$defs/Dashboard"
         },
         "prometheus": {
           "default": "none",

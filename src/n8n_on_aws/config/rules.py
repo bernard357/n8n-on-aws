@@ -656,6 +656,24 @@ def finops_cost_cliffs(d: Deployment) -> Iterator[Finding]:
         )
 
 
+@rule
+def finops_dashboard(d: Deployment) -> Iterator[Finding]:
+    if d.observability.dashboard.enabled:
+        yield _info(
+            "F5",
+            "observability.dashboard.enabled",
+            "the dashboard is free for the first 3 in the account, then $3/month; "
+            "each alarm costs $0.10/month",
+        )
+    elif d.environment == "production":
+        yield _warn(
+            "F5",
+            "observability.dashboard.enabled",
+            "a production deployment without a dashboard is hard to operate",
+            "set observability.dashboard.enabled: true",
+        )
+
+
 def evaluate(deployment: Deployment) -> list[Finding]:
     """Run every rule and return the findings, errors first."""
     findings = [finding for check in RULES for finding in check(deployment)]

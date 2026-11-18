@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aws_cdk as cdk
 from aws_cdk import aws_applicationautoscaling as appscaling
@@ -11,8 +11,6 @@ from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
-from aws_cdk import aws_cloudwatch as cloudwatch
-from aws_cdk import aws_cloudwatch_actions as cw_actions
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
@@ -27,11 +25,12 @@ from aws_cdk import aws_route53 as route53
 from aws_cdk import aws_route53_targets as route53_targets
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_secretsmanager as secretsmanager
-from aws_cdk import aws_sns as sns
-from aws_cdk import aws_sns_subscriptions as subscriptions
 from aws_cdk import aws_wafv2 as wafv2
 from aws_cdk import custom_resources as cr
 from constructs import Construct
+
+if TYPE_CHECKING:
+    from .dashboard import DashboardBuilder
 
 from ..config.models import Deployment, SecretRef
 from ..plan import PUBLIC_PATHS, Plan, Role
@@ -78,15 +77,19 @@ class ServiceStack(cdk.Stack):
         self.target_groups: dict[str, elbv2.ApplicationTargetGroup] = {}
         self.alb: elbv2.ApplicationLoadBalancer | None = None
         self.distribution: cloudfront.Distribution | None = None
+        self.origin_function: lambda_.Function | None = None
+        self.operations: DashboardBuilder | None = None
         self.zone = hosted_zone(self, d) if d.ingress.domain else None
         self._imported: dict[str, secretsmanager.ISecret] = {}
         self._import_data()
+        self.url = ""  # resolved once the ingress exists
 
         self._cluster()
         if d.has_alb:
             self._load_balancer()
         if d.ingress.kind == "cloudfront":
             self._distribution()
+        self.url = self._resolve(plan.url)
         for role in plan.roles:
             self._service(role)
         if self.alb is not None:
@@ -95,7 +98,6 @@ class ServiceStack(cdk.Stack):
         self._dns()
         if d.ingress.kind == "cloudfront" and d.ingress.cloudfront.origin == "task":
             self._origin_updater()
-        self._alarms()
         self._budget()
         self._outputs()
 
@@ -845,6 +847,7 @@ class ServiceStack(cdk.Stack):
                 "ORIGIN_ID": TASK_ORIGIN_ID,
             },
         )
+        self.origin_function = function
         function.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -914,42 +917,6 @@ class ServiceStack(cdk.Stack):
 
     # ---------------------------------------------------------- operations
 
-    def _alarms(self) -> None:
-        emails = self.d.observability.alarms.email
-        if not emails:
-            return
-        topic = sns.Topic(self, "Alarms", display_name=f"n8n {self.d.name} alarms")
-        for email in emails:
-            topic.add_subscription(subscriptions.EmailSubscription(email))
-        action = cw_actions.SnsAction(topic)
-        alarms: list[cloudwatch.Alarm] = []
-        main = self.services["main"]
-        alarms.append(
-            main.metric_cpu_utilization(period=cdk.Duration.minutes(5)).create_alarm(
-                self,
-                "MainCpu",
-                threshold=85,
-                evaluation_periods=3,
-                alarm_description="n8n main CPU above 85% for 15 minutes",
-            )
-        )
-        if self.alb is not None:
-            alarms.append(
-                self.alb.metrics.http_code_target(
-                    elbv2.HttpCodeTarget.TARGET_5XX_COUNT,
-                    period=cdk.Duration.minutes(5),
-                ).create_alarm(
-                    self,
-                    "Errors5xx",
-                    threshold=10,
-                    evaluation_periods=1,
-                    treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
-                    alarm_description="n8n returned more than 10 errors in 5 minutes",
-                )
-            )
-        for alarm in alarms:
-            alarm.add_alarm_action(action)
-
     def _budget(self) -> None:
         d = self.d
         spec = d.finops.budget
@@ -989,8 +956,7 @@ class ServiceStack(cdk.Stack):
         )
 
     def _outputs(self) -> None:
-        url = self._resolve(self.plan.url)
-        cdk.CfnOutput(self, "Url", value=url, description="n8n editor URL")
+        cdk.CfnOutput(self, "Url", value=self.url, description="n8n editor URL")
         if self.distribution is not None:
             cdk.CfnOutput(
                 self, "DistributionId", value=self.distribution.distribution_id

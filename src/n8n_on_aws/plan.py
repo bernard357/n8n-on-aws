@@ -58,6 +58,8 @@ class Plan(BaseModel):
     public_paths: list[str]
     data_services: dict[str, str]
     tags: dict[str, str]
+    dashboard: bool = False
+    alarm_emails: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
 
 
@@ -341,5 +343,7 @@ def build_plan(d: Deployment, findings: list[Finding] | None = None) -> Plan:
         public_paths=public,
         data_services=services,
         tags=tags,
+        dashboard=d.observability.dashboard.enabled,
+        alarm_emails=list(d.observability.alarms.email),
         findings=all_findings,
     )

@@ -243,7 +243,11 @@ observability:
   log_level: error | warn | info | debug = info
   log_retention_days: int = 30
   container_insights: bool = false
-  alarms: {email: [email] = []}
+  alarms: {email: [email] = []}               # alarms always exist; emails notify
+  dashboard:                                  # one CloudWatch dashboard per deployment
+    enabled: bool = true                      # nano profile: false
+    period_minutes: 1 | 5 | 15 | 60 = 5
+    range: str = 3h                           # <n>m, <n>h, <n>d or <n>w
   prometheus: none | cloudwatch | amp = none
 
 backup:

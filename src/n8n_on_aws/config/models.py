@@ -598,11 +598,26 @@ class Alarms(Strict):
     email: list[Email] = Field(default_factory=list)
 
 
+class Dashboard(Strict):
+    """One CloudWatch dashboard generated from the deployed resources."""
+
+    enabled: bool = True
+    period_minutes: Literal[1, 5, 15, 60] = Field(
+        5, description="Default metric period of the widgets"
+    )
+    range: str = Field(
+        "3h",
+        pattern=r"^[1-9]\d*[mhdw]$",
+        description="Time range shown when the dashboard opens, e.g. 3h, 7d",
+    )
+
+
 class Observability(Strict):
     log_level: Literal["error", "warn", "info", "debug"] = "info"
     log_retention_days: int = Field(30, ge=0, description="0 keeps logs forever")
     container_insights: bool = False
     alarms: Alarms = Field(default_factory=Alarms)
+    dashboard: Dashboard = Field(default_factory=Dashboard)
     prometheus: Literal["none", "cloudwatch", "amp"] = "none"
 
 

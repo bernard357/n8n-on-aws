@@ -31,6 +31,8 @@ class DataStack(cdk.Stack):
     db_secret: secretsmanager.ISecret | None
     db_construct: Construct | None
     queue_endpoint: str | None
+    queue_name: str
+    queue_construct: cdk.CfnResource | None
     file_system: efs.FileSystem | None
     access_point: efs.AccessPoint | None
     bucket: s3.IBucket | None
@@ -219,6 +221,8 @@ class DataStack(cdk.Stack):
         spec = d.queue
         net = self.network
         self.queue_endpoint = None
+        self.queue_name = f"{d.name}-queue"
+        self.queue_construct = None
         if not d.is_queued or spec.kind == "none":
             return
         if spec.kind == "external":
@@ -242,7 +246,7 @@ class DataStack(cdk.Stack):
             cache = elasticache.CfnServerlessCache(
                 self,
                 "Queue",
-                serverless_cache_name=f"{d.name}-queue",
+                serverless_cache_name=self.queue_name,
                 engine=spec.engine,
                 security_group_ids=[net.sg_data.security_group_id],
                 subnet_ids=subnet_ids,
@@ -250,6 +254,7 @@ class DataStack(cdk.Stack):
                 description=f"n8n queue for {d.name}",
             )
             self.queue_endpoint = cache.attr_endpoint_address
+            self.queue_construct = cache
             return
         subnet_group = elasticache.CfnSubnetGroup(
             self,
@@ -260,6 +265,7 @@ class DataStack(cdk.Stack):
         group = elasticache.CfnReplicationGroup(
             self,
             "Queue",
+            replication_group_id=self.queue_name,
             replication_group_description=f"n8n queue for {d.name}",
             engine=spec.engine,
             cache_node_type=spec.node_type,
@@ -273,6 +279,7 @@ class DataStack(cdk.Stack):
             security_group_ids=[net.sg_data.security_group_id],
         )
         self.queue_endpoint = group.attr_primary_end_point_address
+        self.queue_construct = group
 
     # ----------------------------------------------------------- files (EFS)
 

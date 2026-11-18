@@ -8,11 +8,12 @@ from pathlib import Path
 
 import aws_cdk as cdk
 from aws_cdk import aws_iam as iam
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config.models import Deployment
 from ..config.rules import Finding
 from ..plan import build_plan
+from .dashboard import DashboardBuilder
 from .data import DataStack
 from .edge import EDGE_REGION, EdgeStack, needs_anomaly_monitor, needs_edge_certificate
 from .network import NetworkStack
@@ -31,6 +32,7 @@ class StackSummary(BaseModel):
     name: str
     region: str
     resources: dict[str, int]
+    dashboard: list[str] = Field(default_factory=list)
 
 
 def environment(d: Deployment) -> cdk.Environment:
@@ -96,7 +98,7 @@ def build_app(
         env=env,
         description=description.format("data services"),
     )
-    ServiceStack(
+    service = ServiceStack(
         app,
         f"{d.name}-n8n",
         d,
@@ -108,6 +110,8 @@ def build_app(
         cross_region_references=edge is not None,
         description=description.format("n8n services"),
     )
+    service.operations = DashboardBuilder(d, plan, network, data, service)
+    service.operations.build()
     if not cross_region and needs_anomaly_monitor(d):
         EdgeStack(app, f"{d.name}-edge", d, env=env, description=description)
 
@@ -134,6 +138,9 @@ def synthesize(
     if app is None:
         return [], findings
     assembly = app.synth()
+    service = app.node.try_find_child(f"{d.name}-n8n")
+    builder = getattr(service, "operations", None)
+    sections = builder.titles if builder and builder.dashboard else []
     summaries: list[StackSummary] = []
     for artifact in assembly.stacks:
         template = artifact.template
@@ -145,6 +152,7 @@ def synthesize(
                 name=artifact.stack_name,
                 region=artifact.environment.region,
                 resources=dict(sorted(counts.items())),
+                dashboard=sections if artifact.stack_name == f"{d.name}-n8n" else [],
             )
         )
     return summaries, findings

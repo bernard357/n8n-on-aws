@@ -17,6 +17,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "network": {"vpc": {"kind": "create", "nat": "none"}},
         "ingress": {"kind": "cloudfront", "cloudfront": {"origin": "task"}},
         "database": {"kind": "sqlite"},
+        "observability": {"dashboard": {"enabled": False}},
     },
     "small": {
         "topology": {"mode": "single", "main": {"cpu": 512, "memory": 1024}},

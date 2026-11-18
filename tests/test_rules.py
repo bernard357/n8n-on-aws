@@ -340,3 +340,22 @@ def test_f3_cost_cliffs_outside_production() -> None:
 def test_f4_budget_without_emails() -> None:
     result = check({"finops": {"budget": {"monthly_usd": 50}}})
     assert "F4" in codes(result, "warning")
+
+
+def test_f5_dashboard_cost_and_production_without_dashboard() -> None:
+    result = check()
+    assert "F5" in codes(result, "info")
+    off = check({"observability": {"dashboard": {"enabled": False}}})
+    assert "F5" in codes(off, "warning")
+    dev = check(
+        {"environment": "dev", "observability": {"dashboard": {"enabled": False}}}
+    )
+    assert "F5" not in codes(dev, "warning")
+
+
+def test_dashboard_period_and_range_are_checked() -> None:
+    bad = check({"observability": {"dashboard": {"period_minutes": 2}}})
+    assert not bad.ok
+    bad = check({"observability": {"dashboard": {"range": "3 hours"}}})
+    assert not bad.ok
+    assert check({"observability": {"dashboard": {"range": "2w"}}}).ok

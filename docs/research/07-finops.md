@@ -57,6 +57,8 @@ pick **frugal defaults**, and make the expensive choices **explicit and justifie
 | Aurora Serverless v2, min 0.5 ACU | ~$45/month | `min_acu: 0` (scale to zero, cold start), RDS t4g |
 | ElastiCache node `cache.r7g.large` | ~$170/month per node | ElastiCache Serverless Valkey (pay per GB-hour and ECPU), `cache.t4g.micro` |
 | Container Insights (enhanced) | per metric | off by default |
+| CloudWatch dashboard | first 3 per account free, then $3/month | `dashboard.enabled: false` (default on `nano`) |
+| CloudWatch alarms | $0.10/month each (about 5 to 12 per deployment) | always on: they are the operator's first signal |
 | CloudFront `price_class: all` | higher per-GB rates | `100` (NA + EU) |
 | Log retention "never expire" | grows forever | 30 days default |
 | S3 without lifecycle | grows forever | `binary_expiry_days`, `exchange.expiry_days` |

@@ -52,6 +52,28 @@ the bucket and EFS are retained when stacks are deleted, except with `environmen
 After the first deployment, open the URL printed as the `Url` output and create the n8n
 owner account.
 
+## Operating
+
+Each deployment gets one CloudWatch dashboard, named after the deployment and printed as
+the `DashboardUrl` output. It is generated from the resources that were synthesized, so it
+follows the configuration:
+
+- a header with the edition, version and links to n8n, its logs and its ECS cluster
+- alarm status, and task counts per role when Container Insights is on
+- CloudFront (metrics from us-east-1) or the load balancer
+- CPU and memory of each n8n role, and of the runner sidecars with Container Insights
+- Logs Insights tables of recent errors per role
+- the database, queue, EFS, bucket, NAT and origin-updater Lambda, when they exist
+- links to Cost Explorer, the budget and cost anomalies
+
+Resources outside AWS (an external database or Redis, the NAT of an existing VPC) appear
+as a note, never silently left out. A test checks that every resource of a monitored type
+in the templates has a widget.
+
+Alarms are always created, because the dashboard shows them. They send email only when
+`observability.alarms.email` is set. Turn the dashboard off with
+`observability.dashboard.enabled: false` (the default for `nano`).
+
 ## Research and design
 
 1. [Landscape and positioning](docs/research/01-landscape-and-positioning.md)
@@ -87,6 +109,7 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Configuration model, profiles, licence and FinOps rules | ✅ [#1](https://github.com/bernard357/n8n-on-aws/issues/1) |
 | ECS Fargate: network, data, services, ALB, CloudFront (ALB or task origin), Cognito and OIDC on the ALB, budgets, schedules | ✅ [#2](https://github.com/bernard357/n8n-on-aws/issues/2) |
 | Smoke test of `minimal` (CloudFront to task, Aurora Serverless, runners) on a real account | ✅ |
+| CloudWatch dashboard and alarms generated from the deployed resources | ✅ [#3](https://github.com/bernard357/n8n-on-aws/issues/3) |
 | Smoke tests of the ALB, Cognito, queue and multi-main shapes | next |
 | Cognito at the edge (`cloudfront-cognito`), WAF and IP allow-list on CloudFront | planned |
 | Worker scaling on queue depth | planned (CPU scaling meanwhile) |

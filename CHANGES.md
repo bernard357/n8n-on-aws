@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- CloudWatch dashboard per deployment, generated from the synthesized resources (#3):
+  - sections for CloudFront or the ALB, each n8n role, runners, logs, the database,
+    queue, EFS, bucket, NAT and origin-updater Lambda, only when they exist
+  - external resources are shown as "not monitored here"
+  - a coverage test fails when a monitored resource type has no widget
+  - `observability.dashboard` (`enabled`, `period_minutes`, `range`); off on `nano`
+  - the `DashboardUrl` output; `plan` and `deploy --dry-run` show the dashboard
+- Alarms are always created and notify only when emails are set. New alarms: main
+  down, unhealthy targets, database capacity, CPU or storage, queue throttling or
+  memory, EFS I/O limit, NAT port errors or instance status, origin-updater errors.
+- The node-based ElastiCache replication group is named `<name>-queue`.
+- FinOps rule `F5`: dashboard and alarm costs; production without a dashboard.
 - CDK synthesis on ECS Fargate (#2):
   - created or existing VPC, with NAT none, instance, single or per-AZ
   - Aurora Serverless v2, provisioned Aurora, RDS, external PostgreSQL, or SQLite on EFS
@@ -29,7 +41,7 @@
   - topology and AWS rules (`T1`–`T15`)
   - n8n licence enforcement (`L1`–`L10`): community usage boundaries, edition-gated
     features, and gates that also apply to raw `n8n.env`
-  - FinOps rules (`F1`–`F4`)
+  - FinOps rules (`F1`–`F5`)
 - CLI: `validate`, `plan` (text or JSON, `--show-env`), `deploy --dry-run`, `schema`,
   with `--set key=value` overrides.
 - JSON Schema in `schema/n8n-on-aws.v1.json` for editor completion.

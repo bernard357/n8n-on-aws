@@ -56,6 +56,13 @@ def _print_plan(plan: Plan, show_env: bool, out: TextIO) -> None:
     print(f"  data        : {services}", file=out)
     if plan.public_paths:
         print(f"  open paths  : {' '.join(plan.public_paths)}", file=out)
+    dashboard = f"dashboard {plan.name}" if plan.dashboard else "no dashboard"
+    notify = (
+        "alarms email " + ", ".join(plan.alarm_emails)
+        if plan.alarm_emails
+        else "alarms notify nobody"
+    )
+    print(f"  operations  : {dashboard}; {notify}", file=out)
     print("  roles:", file=out)
     for role in plan.roles:
         replicas = (
@@ -144,6 +151,8 @@ def cmd_deploy(args: argparse.Namespace, out: TextIO) -> int:
         print(f"  - {stack.name} ({stack.region}): {total} resources", file=out)
         for kind, count in stack.resources.items():
             print(f"      {count:>3} {kind}", file=out)
+        if stack.dashboard:
+            print(f"      dashboard: {', '.join(stack.dashboard)}", file=out)
     print(
         f"\nDry run: templates written to {outdir}; nothing was deployed and "
         "no AWS API was called.",
