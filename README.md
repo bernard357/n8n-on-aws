@@ -10,7 +10,24 @@ n8n-on-aws deploy -f fixtures/configuration/minimal.yaml --dry-run
 n8n-on-aws deploy -f fixtures/configuration/minimal.yaml
 ```
 
-> Status: design phase. Nothing is implemented yet; the research below drives the first release.
+> Status: the configuration model, the rule engine (topology, n8n licensing, FinOps) and
+> `validate` / `plan` / `deploy --dry-run` work. CDK synthesis and the `init` assistant
+> are next.
+
+## Quick start (from source)
+
+```bash
+git clone https://github.com/bernard357/n8n-on-aws.git && cd n8n-on-aws
+make setup
+.venv/bin/n8n-on-aws validate -f fixtures/configuration/nano.yaml
+.venv/bin/n8n-on-aws plan -f fixtures/configuration/queue-workers.yaml --show-env
+.venv/bin/n8n-on-aws deploy -f fixtures/configuration/minimal.yaml --dry-run
+.venv/bin/n8n-on-aws validate -f fixtures/configuration/minimal.yaml --set topology.mode=multi-main
+```
+
+The last command fails on purpose: multi-main needs the n8n Enterprise edition. Every
+finding has a stable code: `S` schema, `T` topology, `L` licence, `F` FinOps. Point your
+editor at [schema/n8n-on-aws.v1.json](schema/n8n-on-aws.v1.json) for completion.
 
 ## Research and design
 

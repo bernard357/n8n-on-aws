@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "n8n-on-aws"
+dynamic = ["version"]
+description = "One YAML file, every shade of n8n on AWS: configuration-driven CDK deployment of n8n on ECS or EKS."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Bernard Paques" }]
+keywords = ["n8n", "aws", "cdk", "cloudformation", "ecs", "eks", "fargate", "finops"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10",
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "types-PyYAML",
+]
+
+[project.scripts]
+n8n-on-aws = "n8n_on_aws.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/bernard357/n8n-on-aws"
+Issues = "https://github.com/bernard357/n8n-on-aws/issues"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/n8n_on_aws"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"fixtures/configuration" = "n8n_on_aws/samples"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/n8n_on_aws"]
+branch = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/n8n_on_aws"]
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unused_ignores = true

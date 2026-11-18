@@ -1,0 +1,2559 @@
+{
+  "$defs": {
+    "Alarms": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "items": {
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "type": "string"
+          },
+          "title": "Email",
+          "type": "array"
+        }
+      },
+      "title": "Alarms",
+      "type": "object"
+    },
+    "AuroraProvisioned": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": {
+          "default": "17",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "backup_retention_days": {
+          "default": 7,
+          "maximum": 35,
+          "minimum": 1,
+          "title": "Backup Retention Days",
+          "type": "integer"
+        },
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "pool_size": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Pool Size",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "aurora",
+          "title": "Kind",
+          "type": "string"
+        },
+        "instance_class": {
+          "default": "db.r7g.large",
+          "pattern": "^db\\.",
+          "title": "Instance Class",
+          "type": "string"
+        },
+        "instances": {
+          "default": 2,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Instances",
+          "type": "integer"
+        },
+        "io_optimized": {
+          "default": false,
+          "title": "Io Optimized",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AuroraProvisioned",
+      "type": "object"
+    },
+    "AuroraServerless": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": {
+          "default": "17",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "backup_retention_days": {
+          "default": 7,
+          "maximum": 35,
+          "minimum": 1,
+          "title": "Backup Retention Days",
+          "type": "integer"
+        },
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "pool_size": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Pool Size",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "aurora-serverless",
+          "title": "Kind",
+          "type": "string"
+        },
+        "min_acu": {
+          "default": 0.5,
+          "maximum": 256,
+          "minimum": 0,
+          "title": "Min Acu",
+          "type": "number"
+        },
+        "max_acu": {
+          "default": 4,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Max Acu",
+          "type": "number"
+        },
+        "readers": {
+          "default": 0,
+          "maximum": 15,
+          "minimum": 0,
+          "title": "Readers",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AuroraServerless",
+      "type": "object"
+    },
+    "Auth": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "none",
+          "enum": [
+            "none",
+            "ip-allowlist",
+            "alb-cognito",
+            "alb-oidc",
+            "cloudfront-cognito"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "cognito": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedCognito",
+              "existing": "#/$defs/ExistingCognito"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatedCognito"
+            },
+            {
+              "$ref": "#/$defs/ExistingCognito"
+            }
+          ],
+          "title": "Cognito"
+        },
+        "oidc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Oidc"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "public_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Public Paths",
+          "type": "array"
+        },
+        "session_hours": {
+          "default": 12,
+          "maximum": 168,
+          "minimum": 1,
+          "title": "Session Hours",
+          "type": "integer"
+        },
+        "n8n_sso": {
+          "discriminator": {
+            "mapping": {
+              "none": "#/$defs/NoSso",
+              "oidc": "#/$defs/OidcSso",
+              "saml": "#/$defs/SamlSso"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoSso"
+            },
+            {
+              "$ref": "#/$defs/OidcSso"
+            },
+            {
+              "$ref": "#/$defs/SamlSso"
+            }
+          ],
+          "title": "N8N Sso"
+        }
+      },
+      "title": "Auth",
+      "type": "object"
+    },
+    "Aws": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]+)+-\\d$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "object"
+        },
+        "permissions_boundary": {
+          "anyOf": [
+            {
+              "pattern": "^arn:aws[a-z-]*:iam::",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Permissions Boundary"
+        },
+        "kms_key": {
+          "discriminator": {
+            "mapping": {
+              "aws-managed": "#/$defs/AwsManagedKey",
+              "create": "#/$defs/CreatedKey",
+              "existing": "#/$defs/ExistingKey"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AwsManagedKey"
+            },
+            {
+              "$ref": "#/$defs/CreatedKey"
+            },
+            {
+              "$ref": "#/$defs/ExistingKey"
+            }
+          ],
+          "title": "Kms Key"
+        }
+      },
+      "title": "Aws",
+      "type": "object"
+    },
+    "AwsManagedKey": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "aws-managed",
+          "default": "aws-managed",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AwsManagedKey",
+      "type": "object"
+    },
+    "Backup": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "none",
+          "enum": [
+            "none",
+            "aws-backup"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "retention_days": {
+          "default": 35,
+          "minimum": 1,
+          "title": "Retention Days",
+          "type": "integer"
+        },
+        "cross_region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]+)+-\\d$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cross Region"
+        }
+      },
+      "title": "Backup",
+      "type": "object"
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "monthly_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monthly Usd"
+        },
+        "alert_emails": {
+          "items": {
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "type": "string"
+          },
+          "title": "Alert Emails",
+          "type": "array"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    },
+    "Chart": {
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "default": "oci://ghcr.io/n8n-io/n8n-helm-chart/n8n",
+          "title": "Repository",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "Chart",
+      "type": "object"
+    },
+    "CloudFront": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "default": "task",
+          "enum": [
+            "task",
+            "alb"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "price_class": {
+          "default": "100",
+          "enum": [
+            "100",
+            "200",
+            "all"
+          ],
+          "title": "Price Class",
+          "type": "string"
+        },
+        "waf": {
+          "discriminator": {
+            "mapping": {
+              "existing": "#/$defs/ExistingWaf",
+              "managed": "#/$defs/ManagedWaf",
+              "none": "#/$defs/NoWaf"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoWaf"
+            },
+            {
+              "$ref": "#/$defs/ManagedWaf"
+            },
+            {
+              "$ref": "#/$defs/ExistingWaf"
+            }
+          ],
+          "title": "Waf"
+        }
+      },
+      "title": "CloudFront",
+      "type": "object"
+    },
+    "CreatedBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "title": "Kind",
+          "type": "string"
+        },
+        "binary_expiry_days": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 30,
+          "title": "Binary Expiry Days"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "CreatedBucket",
+      "type": "object"
+    },
+    "CreatedCertificate": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "CreatedCertificate",
+      "type": "object"
+    },
+    "CreatedCognito": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "default": "create",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mfa": {
+          "default": "optional",
+          "enum": [
+            "off",
+            "optional",
+            "required"
+          ],
+          "title": "Mfa",
+          "type": "string"
+        },
+        "self_signup": {
+          "default": false,
+          "title": "Self Signup",
+          "type": "boolean"
+        },
+        "invite": {
+          "items": {
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "type": "string"
+          },
+          "title": "Invite",
+          "type": "array"
+        },
+        "federation": {
+          "discriminator": {
+            "mapping": {
+              "none": "#/$defs/NoFederation",
+              "oidc": "#/$defs/OidcFederation",
+              "saml": "#/$defs/SamlFederation"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoFederation"
+            },
+            {
+              "$ref": "#/$defs/OidcFederation"
+            },
+            {
+              "$ref": "#/$defs/SamlFederation"
+            }
+          ],
+          "title": "Federation"
+        }
+      },
+      "title": "CreatedCognito",
+      "type": "object"
+    },
+    "CreatedEcsCluster": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "default": "create",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "CreatedEcsCluster",
+      "type": "object"
+    },
+    "CreatedEksCluster": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "default": "create",
+          "title": "Kind",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.34",
+          "pattern": "^1\\.\\d+$",
+          "title": "Version",
+          "type": "string"
+        },
+        "compute": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "managed-nodes",
+            "fargate"
+          ],
+          "title": "Compute",
+          "type": "string"
+        },
+        "node_group": {
+          "$ref": "#/$defs/NodeGroup"
+        },
+        "admin_role_arns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Admin Role Arns",
+          "type": "array"
+        }
+      },
+      "title": "CreatedEksCluster",
+      "type": "object"
+    },
+    "CreatedKey": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "CreatedKey",
+      "type": "object"
+    },
+    "CreatedVpc": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "create",
+          "default": "create",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cidr": {
+          "default": "10.80.0.0/16",
+          "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+$",
+          "title": "Cidr",
+          "type": "string"
+        },
+        "azs": {
+          "default": 2,
+          "enum": [
+            2,
+            3
+          ],
+          "title": "Azs",
+          "type": "integer"
+        },
+        "nat": {
+          "default": "single",
+          "enum": [
+            "none",
+            "instance",
+            "single",
+            "per-az"
+          ],
+          "title": "Nat",
+          "type": "string"
+        },
+        "endpoints": {
+          "items": {
+            "enum": [
+              "s3",
+              "ecr",
+              "logs",
+              "secretsmanager",
+              "sts"
+            ],
+            "type": "string"
+          },
+          "title": "Endpoints",
+          "type": "array"
+        }
+      },
+      "title": "CreatedVpc",
+      "type": "object"
+    },
+    "Ec2Capacity": {
+      "additionalProperties": false,
+      "properties": {
+        "instance_type": {
+          "default": "m7g.large",
+          "title": "Instance Type",
+          "type": "string"
+        },
+        "min": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Min",
+          "type": "integer"
+        },
+        "max": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        }
+      },
+      "title": "Ec2Capacity",
+      "type": "object"
+    },
+    "Ecs": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedEcsCluster",
+              "existing": "#/$defs/ExistingEcsCluster"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatedEcsCluster"
+            },
+            {
+              "$ref": "#/$defs/ExistingEcsCluster"
+            }
+          ],
+          "title": "Cluster"
+        },
+        "capacity": {
+          "default": "fargate",
+          "enum": [
+            "fargate",
+            "fargate-spot",
+            "ec2"
+          ],
+          "title": "Capacity",
+          "type": "string"
+        },
+        "architecture": {
+          "default": "arm64",
+          "enum": [
+            "arm64",
+            "x86_64"
+          ],
+          "title": "Architecture",
+          "type": "string"
+        },
+        "ec2": {
+          "$ref": "#/$defs/Ec2Capacity"
+        },
+        "exec": {
+          "default": false,
+          "title": "Exec",
+          "type": "boolean"
+        }
+      },
+      "title": "Ecs",
+      "type": "object"
+    },
+    "Eks": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedEksCluster",
+              "existing": "#/$defs/ExistingEksCluster"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatedEksCluster"
+            },
+            {
+              "$ref": "#/$defs/ExistingEksCluster"
+            }
+          ],
+          "title": "Cluster"
+        },
+        "namespace": {
+          "default": "n8n",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "chart": {
+          "$ref": "#/$defs/Chart"
+        },
+        "keda": {
+          "default": "install",
+          "enum": [
+            "install",
+            "existing",
+            "none"
+          ],
+          "title": "Keda",
+          "type": "string"
+        },
+        "load_balancer_controller": {
+          "default": "install",
+          "enum": [
+            "install",
+            "existing"
+          ],
+          "title": "Load Balancer Controller",
+          "type": "string"
+        }
+      },
+      "title": "Eks",
+      "type": "object"
+    },
+    "ElastiCacheNodes": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "elasticache",
+          "title": "Kind",
+          "type": "string"
+        },
+        "engine": {
+          "default": "valkey",
+          "enum": [
+            "valkey",
+            "redis"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "node_type": {
+          "default": "cache.t4g.small",
+          "pattern": "^cache\\.",
+          "title": "Node Type",
+          "type": "string"
+        },
+        "replicas": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Replicas",
+          "type": "integer"
+        },
+        "key_prefix": {
+          "default": "n8n",
+          "title": "Key Prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ElastiCacheNodes",
+      "type": "object"
+    },
+    "ElastiCacheServerless": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "elasticache-serverless",
+          "title": "Kind",
+          "type": "string"
+        },
+        "engine": {
+          "default": "valkey",
+          "enum": [
+            "valkey",
+            "redis"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "key_prefix": {
+          "default": "n8n",
+          "title": "Key Prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ElastiCacheServerless",
+      "type": "object"
+    },
+    "Exchange": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "prefix": {
+          "default": "exchange/",
+          "title": "Prefix",
+          "type": "string"
+        },
+        "expiry_days": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expiry Days"
+        }
+      },
+      "title": "Exchange",
+      "type": "object"
+    },
+    "Executions": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "default": -1,
+          "minimum": -1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "max_age_hours": {
+          "default": 336,
+          "minimum": 1,
+          "title": "Max Age Hours",
+          "type": "integer"
+        },
+        "max_count": {
+          "default": 10000,
+          "minimum": 0,
+          "title": "Max Count",
+          "type": "integer"
+        },
+        "save_on_success": {
+          "default": "all",
+          "enum": [
+            "all",
+            "none"
+          ],
+          "title": "Save On Success",
+          "type": "string"
+        },
+        "offload_manual_to_workers": {
+          "default": true,
+          "title": "Offload Manual To Workers",
+          "type": "boolean"
+        }
+      },
+      "title": "Executions",
+      "type": "object"
+    },
+    "ExistingBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+          "title": "Name",
+          "type": "string"
+        },
+        "prefix": {
+          "default": "",
+          "title": "Prefix",
+          "type": "string"
+        },
+        "kms_key_arn": {
+          "anyOf": [
+            {
+              "pattern": "^arn:aws[a-z-]*:kms:",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kms Key Arn"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ExistingBucket",
+      "type": "object"
+    },
+    "ExistingCertificate": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "arn": {
+          "pattern": "^arn:aws[a-z-]*:acm:",
+          "title": "Arn",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "arn"
+      ],
+      "title": "ExistingCertificate",
+      "type": "object"
+    },
+    "ExistingCognito": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "user_pool_id": {
+          "pattern": "^[a-z]{2}(-[a-z]+)+-\\d_[A-Za-z0-9]+$",
+          "title": "User Pool Id",
+          "type": "string"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "user_pool_id",
+        "client_id",
+        "domain"
+      ],
+      "title": "ExistingCognito",
+      "type": "object"
+    },
+    "ExistingEcsCluster": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ExistingEcsCluster",
+      "type": "object"
+    },
+    "ExistingEksCluster": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "admin_role_arns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Admin Role Arns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "ExistingEksCluster",
+      "type": "object"
+    },
+    "ExistingEncryptionKey": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "secret": {
+          "minLength": 1,
+          "title": "Secret",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "secret"
+      ],
+      "title": "ExistingEncryptionKey",
+      "type": "object"
+    },
+    "ExistingKey": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "arn": {
+          "pattern": "^arn:aws[a-z-]*:kms:",
+          "title": "Arn",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "arn"
+      ],
+      "title": "ExistingKey",
+      "type": "object"
+    },
+    "ExistingVpc": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^vpc-[0-9a-f]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "private_subnets": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Private Subnets",
+          "type": "array"
+        },
+        "public_subnets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Public Subnets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "private_subnets"
+      ],
+      "title": "ExistingVpc",
+      "type": "object"
+    },
+    "ExistingWaf": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "arn": {
+          "pattern": "^arn:aws[a-z-]*:wafv2:",
+          "title": "Arn",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "arn"
+      ],
+      "title": "ExistingWaf",
+      "type": "object"
+    },
+    "ExistingZone": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "existing",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^Z[A-Z0-9]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name"
+      ],
+      "title": "ExistingZone",
+      "type": "object"
+    },
+    "ExternalPostgres": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "external",
+          "title": "Kind",
+          "type": "string"
+        },
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 5432,
+          "title": "Port",
+          "type": "integer"
+        },
+        "name": {
+          "default": "n8n",
+          "title": "Name",
+          "type": "string"
+        },
+        "schema": {
+          "default": "public",
+          "title": "Schema",
+          "type": "string"
+        },
+        "credentials": {
+          "$ref": "#/$defs/SecretRef"
+        },
+        "ssl": {
+          "default": "verify-full",
+          "enum": [
+            "disable",
+            "require",
+            "verify-full"
+          ],
+          "title": "Ssl",
+          "type": "string"
+        },
+        "security_group_id": {
+          "anyOf": [
+            {
+              "pattern": "^sg-[0-9a-f]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Security Group Id"
+        },
+        "pool_size": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Pool Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "host",
+        "credentials"
+      ],
+      "title": "ExternalPostgres",
+      "type": "object"
+    },
+    "ExternalRedis": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "external",
+          "title": "Kind",
+          "type": "string"
+        },
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 6379,
+          "title": "Port",
+          "type": "integer"
+        },
+        "tls": {
+          "default": true,
+          "title": "Tls",
+          "type": "boolean"
+        },
+        "auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cluster": {
+          "default": false,
+          "title": "Cluster",
+          "type": "boolean"
+        },
+        "security_group_id": {
+          "anyOf": [
+            {
+              "pattern": "^sg-[0-9a-f]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Security Group Id"
+        },
+        "key_prefix": {
+          "default": "n8n",
+          "title": "Key Prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "host"
+      ],
+      "title": "ExternalRedis",
+      "type": "object"
+    },
+    "FinOps": {
+      "additionalProperties": false,
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/Budget"
+        },
+        "anomaly_detection": {
+          "default": false,
+          "title": "Anomaly Detection",
+          "type": "boolean"
+        },
+        "schedule": {
+          "$ref": "#/$defs/Schedule"
+        },
+        "max_monthly_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Monthly Usd"
+        }
+      },
+      "title": "FinOps",
+      "type": "object"
+    },
+    "GeneratedEncryptionKey": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "generate",
+          "default": "generate",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "GeneratedEncryptionKey",
+      "type": "object"
+    },
+    "Ingress": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "cloudfront",
+          "enum": [
+            "cloudfront",
+            "alb"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?\\.)+[a-z]{2,}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "public": {
+          "default": true,
+          "title": "Public",
+          "type": "boolean"
+        },
+        "allowed_cidrs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Cidrs",
+          "type": "array"
+        },
+        "hosted_zone": {
+          "discriminator": {
+            "mapping": {
+              "existing": "#/$defs/ExistingZone",
+              "lookup": "#/$defs/LookupZone",
+              "none": "#/$defs/NoZone"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LookupZone"
+            },
+            {
+              "$ref": "#/$defs/ExistingZone"
+            },
+            {
+              "$ref": "#/$defs/NoZone"
+            }
+          ],
+          "title": "Hosted Zone"
+        },
+        "certificate": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedCertificate",
+              "existing": "#/$defs/ExistingCertificate",
+              "none": "#/$defs/NoCertificate"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatedCertificate"
+            },
+            {
+              "$ref": "#/$defs/ExistingCertificate"
+            },
+            {
+              "$ref": "#/$defs/NoCertificate"
+            }
+          ],
+          "title": "Certificate"
+        },
+        "idle_timeout_seconds": {
+          "default": 300,
+          "maximum": 4000,
+          "minimum": 60,
+          "title": "Idle Timeout Seconds",
+          "type": "integer"
+        },
+        "cloudfront": {
+          "$ref": "#/$defs/CloudFront"
+        },
+        "waf": {
+          "description": "WAF on the ALB",
+          "discriminator": {
+            "mapping": {
+              "existing": "#/$defs/ExistingWaf",
+              "managed": "#/$defs/ManagedWaf",
+              "none": "#/$defs/NoWaf"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoWaf"
+            },
+            {
+              "$ref": "#/$defs/ManagedWaf"
+            },
+            {
+              "$ref": "#/$defs/ExistingWaf"
+            }
+          ],
+          "title": "Waf"
+        }
+      },
+      "title": "Ingress",
+      "type": "object"
+    },
+    "License": {
+      "additionalProperties": false,
+      "properties": {
+        "edition": {
+          "default": "community",
+          "enum": [
+            "community",
+            "registered-community",
+            "business",
+            "enterprise"
+          ],
+          "title": "Edition",
+          "type": "string"
+        },
+        "activation_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "certificate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Usage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "License",
+      "type": "object"
+    },
+    "LookupZone": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "lookup",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "title": "LookupZone",
+      "type": "object"
+    },
+    "Main": {
+      "additionalProperties": false,
+      "properties": {
+        "replicas": {
+          "default": 1,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Replicas",
+          "type": "integer"
+        },
+        "cpu": {
+          "default": 512,
+          "description": "CPU units (1024 = 1 vCPU)",
+          "title": "Cpu",
+          "type": "integer"
+        },
+        "memory": {
+          "default": 1024,
+          "description": "MiB",
+          "title": "Memory",
+          "type": "integer"
+        }
+      },
+      "title": "Main",
+      "type": "object"
+    },
+    "ManagedWaf": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "managed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rate_limit": {
+          "default": 2000,
+          "minimum": 100,
+          "title": "Rate Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ManagedWaf",
+      "type": "object"
+    },
+    "N8n": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "default": "stable",
+          "title": "Version",
+          "type": "string"
+        },
+        "image": {
+          "default": "docker.n8n.io/n8nio/n8n",
+          "title": "Image",
+          "type": "string"
+        },
+        "timezone": {
+          "default": "UTC",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "license": {
+          "$ref": "#/$defs/License"
+        },
+        "encryption_key": {
+          "discriminator": {
+            "mapping": {
+              "existing": "#/$defs/ExistingEncryptionKey",
+              "generate": "#/$defs/GeneratedEncryptionKey"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/GeneratedEncryptionKey"
+            },
+            {
+              "$ref": "#/$defs/ExistingEncryptionKey"
+            }
+          ],
+          "title": "Encryption Key"
+        },
+        "runners": {
+          "$ref": "#/$defs/Runners"
+        },
+        "executions": {
+          "$ref": "#/$defs/Executions"
+        },
+        "public_api": {
+          "default": true,
+          "title": "Public Api",
+          "type": "boolean"
+        },
+        "metrics": {
+          "default": false,
+          "title": "Metrics",
+          "type": "boolean"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "secret_env": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SecretRef"
+          },
+          "title": "Secret Env",
+          "type": "object"
+        }
+      },
+      "title": "N8n",
+      "type": "object"
+    },
+    "Network": {
+      "additionalProperties": false,
+      "properties": {
+        "vpc": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedVpc",
+              "existing": "#/$defs/ExistingVpc"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatedVpc"
+            },
+            {
+              "$ref": "#/$defs/ExistingVpc"
+            }
+          ],
+          "title": "Vpc"
+        }
+      },
+      "title": "Network",
+      "type": "object"
+    },
+    "NoBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoBucket",
+      "type": "object"
+    },
+    "NoCertificate": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoCertificate",
+      "type": "object"
+    },
+    "NoFederation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoFederation",
+      "type": "object"
+    },
+    "NoQueue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoQueue",
+      "type": "object"
+    },
+    "NoSso": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoSso",
+      "type": "object"
+    },
+    "NoWaf": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoWaf",
+      "type": "object"
+    },
+    "NoZone": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoZone",
+      "type": "object"
+    },
+    "NodeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "instance_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instance Types",
+          "type": "array"
+        },
+        "min": {
+          "default": 2,
+          "minimum": 0,
+          "title": "Min",
+          "type": "integer"
+        },
+        "max": {
+          "default": 6,
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        }
+      },
+      "title": "NodeGroup",
+      "type": "object"
+    },
+    "Observability": {
+      "additionalProperties": false,
+      "properties": {
+        "log_level": {
+          "default": "info",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "title": "Log Level",
+          "type": "string"
+        },
+        "log_retention_days": {
+          "default": 30,
+          "description": "0 keeps logs forever",
+          "minimum": 0,
+          "title": "Log Retention Days",
+          "type": "integer"
+        },
+        "container_insights": {
+          "default": false,
+          "title": "Container Insights",
+          "type": "boolean"
+        },
+        "alarms": {
+          "$ref": "#/$defs/Alarms"
+        },
+        "prometheus": {
+          "default": "none",
+          "enum": [
+            "none",
+            "cloudwatch",
+            "amp"
+          ],
+          "title": "Prometheus",
+          "type": "string"
+        }
+      },
+      "title": "Observability",
+      "type": "object"
+    },
+    "Oidc": {
+      "additionalProperties": false,
+      "properties": {
+        "issuer": {
+          "title": "Issuer",
+          "type": "string"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "$ref": "#/$defs/SecretRef"
+        },
+        "scope": {
+          "default": "openid email",
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issuer",
+        "client_id",
+        "client_secret"
+      ],
+      "title": "Oidc",
+      "type": "object"
+    },
+    "OidcFederation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "oidc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "issuer": {
+          "title": "Issuer",
+          "type": "string"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "$ref": "#/$defs/SecretRef"
+        }
+      },
+      "required": [
+        "kind",
+        "issuer",
+        "client_id",
+        "client_secret"
+      ],
+      "title": "OidcFederation",
+      "type": "object"
+    },
+    "OidcSso": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "oidc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "discovery_endpoint": {
+          "title": "Discovery Endpoint",
+          "type": "string"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "$ref": "#/$defs/SecretRef"
+        },
+        "role_provisioning": {
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "instance_role",
+            "instance_and_project_roles"
+          ],
+          "title": "Role Provisioning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "discovery_endpoint",
+        "client_id",
+        "client_secret"
+      ],
+      "title": "OidcSso",
+      "type": "object"
+    },
+    "Rds": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": {
+          "default": "17",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "backup_retention_days": {
+          "default": 7,
+          "maximum": 35,
+          "minimum": 1,
+          "title": "Backup Retention Days",
+          "type": "integer"
+        },
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "pool_size": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Pool Size",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "rds",
+          "title": "Kind",
+          "type": "string"
+        },
+        "instance_class": {
+          "default": "db.t4g.small",
+          "pattern": "^db\\.",
+          "title": "Instance Class",
+          "type": "string"
+        },
+        "multi_az": {
+          "default": false,
+          "title": "Multi Az",
+          "type": "boolean"
+        },
+        "storage_gb": {
+          "default": 20,
+          "minimum": 20,
+          "title": "Storage Gb",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Rds",
+      "type": "object"
+    },
+    "Runners": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "external",
+          "enum": [
+            "external",
+            "internal"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "image": {
+          "default": "docker.n8n.io/n8nio/runners",
+          "title": "Image",
+          "type": "string"
+        },
+        "max_concurrency": {
+          "default": 5,
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        }
+      },
+      "title": "Runners",
+      "type": "object"
+    },
+    "Runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "default": "ecs",
+          "enum": [
+            "ecs",
+            "eks"
+          ],
+          "title": "Platform",
+          "type": "string"
+        },
+        "ecs": {
+          "$ref": "#/$defs/Ecs"
+        },
+        "eks": {
+          "$ref": "#/$defs/Eks"
+        }
+      },
+      "title": "Runtime",
+      "type": "object"
+    },
+    "SamlFederation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "saml",
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadata_url": {
+          "title": "Metadata Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "metadata_url"
+      ],
+      "title": "SamlFederation",
+      "type": "object"
+    },
+    "SamlSso": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "saml",
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadata_url": {
+          "title": "Metadata Url",
+          "type": "string"
+        },
+        "role_provisioning": {
+          "default": "disabled",
+          "enum": [
+            "disabled",
+            "instance_role",
+            "instance_and_project_roles"
+          ],
+          "title": "Role Provisioning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "metadata_url"
+      ],
+      "title": "SamlSso",
+      "type": "object"
+    },
+    "Schedule": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "always-on",
+          "enum": [
+            "always-on",
+            "office-hours"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "timezone": {
+          "default": "UTC",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "weekdays": {
+          "default": "MON-FRI",
+          "title": "Weekdays",
+          "type": "string"
+        },
+        "start": {
+          "default": "08:00",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "title": "Start",
+          "type": "string"
+        },
+        "stop": {
+          "default": "19:00",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "title": "Stop",
+          "type": "string"
+        }
+      },
+      "title": "Schedule",
+      "type": "object"
+    },
+    "SecretRef": {
+      "additionalProperties": false,
+      "description": "A reference to an AWS Secrets Manager secret, never the value itself.",
+      "properties": {
+        "secret": {
+          "description": "Secret name or ARN",
+          "minLength": 1,
+          "title": "Secret",
+          "type": "string"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "JSON key inside the secret",
+          "title": "Key"
+        }
+      },
+      "required": [
+        "secret"
+      ],
+      "title": "SecretRef",
+      "type": "object"
+    },
+    "Sqlite": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sqlite",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Sqlite",
+      "type": "object"
+    },
+    "Storage": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "discriminator": {
+            "mapping": {
+              "create": "#/$defs/CreatedBucket",
+              "existing": "#/$defs/ExistingBucket",
+              "none": "#/$defs/NoBucket"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NoBucket"
+            },
+            {
+              "$ref": "#/$defs/CreatedBucket"
+            },
+            {
+              "$ref": "#/$defs/ExistingBucket"
+            }
+          ],
+          "title": "Bucket"
+        },
+        "binary_data": {
+          "anyOf": [
+            {
+              "enum": [
+                "database",
+                "filesystem",
+                "s3"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Binary Data"
+        },
+        "execution_data": {
+          "default": "database",
+          "enum": [
+            "database",
+            "s3"
+          ],
+          "title": "Execution Data",
+          "type": "string"
+        },
+        "exchange": {
+          "$ref": "#/$defs/Exchange"
+        },
+        "efs": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "title": "Efs",
+          "type": "string"
+        }
+      },
+      "title": "Storage",
+      "type": "object"
+    },
+    "Topology": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "single",
+          "enum": [
+            "single",
+            "queue",
+            "split",
+            "multi-main"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "main": {
+          "$ref": "#/$defs/Main"
+        },
+        "webhook": {
+          "$ref": "#/$defs/Webhook"
+        },
+        "workers": {
+          "$ref": "#/$defs/Workers"
+        }
+      },
+      "title": "Topology",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "description": "Declared use of the instance, checked against n8n's licence terms.",
+      "properties": {
+        "purpose": {
+          "enum": [
+            "internal-business",
+            "personal",
+            "non-commercial",
+            "service-for-third-parties",
+            "embedded-editor"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "accept_sustainable_use_license": {
+          "default": false,
+          "title": "Accept Sustainable Use License",
+          "type": "boolean"
+        },
+        "employees": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Employees"
+        }
+      },
+      "required": [
+        "purpose"
+      ],
+      "title": "Usage",
+      "type": "object"
+    },
+    "Webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Min",
+          "type": "integer"
+        },
+        "max": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        },
+        "cpu": {
+          "default": 512,
+          "title": "Cpu",
+          "type": "integer"
+        },
+        "memory": {
+          "default": 1024,
+          "title": "Memory",
+          "type": "integer"
+        },
+        "scale_on_cpu": {
+          "default": 60,
+          "maximum": 95,
+          "minimum": 10,
+          "title": "Scale On Cpu",
+          "type": "integer"
+        }
+      },
+      "title": "Webhook",
+      "type": "object"
+    },
+    "Workers": {
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Min",
+          "type": "integer"
+        },
+        "max": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        },
+        "cpu": {
+          "default": 1024,
+          "title": "Cpu",
+          "type": "integer"
+        },
+        "memory": {
+          "default": 2048,
+          "title": "Memory",
+          "type": "integer"
+        },
+        "concurrency": {
+          "default": 10,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "scale_on": {
+          "default": "queue-depth",
+          "enum": [
+            "queue-depth",
+            "cpu"
+          ],
+          "title": "Scale On",
+          "type": "string"
+        },
+        "target": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Target",
+          "type": "integer"
+        },
+        "spot": {
+          "default": false,
+          "title": "Spot",
+          "type": "boolean"
+        }
+      },
+      "title": "Workers",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The whole configuration file, after profile defaults are merged in.",
+  "properties": {
+    "apiVersion": {
+      "const": "n8n-on-aws/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "name": {
+      "pattern": "^[a-z][a-z0-9-]{1,24}$",
+      "title": "Name",
+      "type": "string"
+    },
+    "profile": {
+      "default": "small",
+      "enum": [
+        "nano",
+        "small",
+        "medium",
+        "large",
+        "xlarge"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "environment": {
+      "default": "production",
+      "enum": [
+        "dev",
+        "staging",
+        "production"
+      ],
+      "title": "Environment",
+      "type": "string"
+    },
+    "aws": {
+      "$ref": "#/$defs/Aws"
+    },
+    "n8n": {
+      "$ref": "#/$defs/N8n"
+    },
+    "topology": {
+      "$ref": "#/$defs/Topology"
+    },
+    "runtime": {
+      "$ref": "#/$defs/Runtime"
+    },
+    "network": {
+      "$ref": "#/$defs/Network"
+    },
+    "ingress": {
+      "$ref": "#/$defs/Ingress"
+    },
+    "auth": {
+      "$ref": "#/$defs/Auth"
+    },
+    "database": {
+      "discriminator": {
+        "mapping": {
+          "aurora": "#/$defs/AuroraProvisioned",
+          "aurora-serverless": "#/$defs/AuroraServerless",
+          "external": "#/$defs/ExternalPostgres",
+          "rds": "#/$defs/Rds",
+          "sqlite": "#/$defs/Sqlite"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Sqlite"
+        },
+        {
+          "$ref": "#/$defs/AuroraServerless"
+        },
+        {
+          "$ref": "#/$defs/AuroraProvisioned"
+        },
+        {
+          "$ref": "#/$defs/Rds"
+        },
+        {
+          "$ref": "#/$defs/ExternalPostgres"
+        }
+      ],
+      "title": "Database"
+    },
+    "queue": {
+      "discriminator": {
+        "mapping": {
+          "elasticache": "#/$defs/ElastiCacheNodes",
+          "elasticache-serverless": "#/$defs/ElastiCacheServerless",
+          "external": "#/$defs/ExternalRedis",
+          "none": "#/$defs/NoQueue"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NoQueue"
+        },
+        {
+          "$ref": "#/$defs/ElastiCacheServerless"
+        },
+        {
+          "$ref": "#/$defs/ElastiCacheNodes"
+        },
+        {
+          "$ref": "#/$defs/ExternalRedis"
+        }
+      ],
+      "title": "Queue"
+    },
+    "storage": {
+      "$ref": "#/$defs/Storage"
+    },
+    "observability": {
+      "$ref": "#/$defs/Observability"
+    },
+    "backup": {
+      "$ref": "#/$defs/Backup"
+    },
+    "finops": {
+      "$ref": "#/$defs/FinOps"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "name"
+  ],
+  "title": "n8n-on-aws configuration (v1)",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
