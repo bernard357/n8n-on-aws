@@ -7,13 +7,14 @@ help:
 	@echo "$$ make coverage  - Run tests with coverage"
 	@echo "$$ make validate  - Validate every sample configuration"
 	@echo "$$ make schema    - Export the JSON Schema of the configuration file"
+	@echo "$$ make prices    - Refresh the price table from the AWS Price List API"
 	@echo "$$ make build     - Build the wheel and sdist with uv"
 	@echo "$$ make clean     - Remove build artifacts and caches"
 
 .ONESHELL:
 .EXPORT_ALL_VARIABLES:
 
-PYTHON_PATHS := src/ tests/
+PYTHON_PATHS := src/ tests/ scripts/
 MARKDOWN_FILES := README.md AGENTS.md CHANGES.md $(shell find docs -name '*.md')
 SAMPLES := $(wildcard fixtures/configuration/*.yaml)
 
@@ -53,6 +54,9 @@ validate:
 
 schema:
 	.venv/bin/n8n-on-aws schema -o schema/n8n-on-aws.v1.json
+
+prices:
+	.venv/bin/python scripts/refresh_prices.py
 
 build:
 	uv build

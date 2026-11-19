@@ -1393,6 +1393,9 @@
           ],
           "default": null,
           "title": "Max Monthly Usd"
+        },
+        "usage": {
+          "$ref": "#/$defs/TrafficUsage"
         }
       },
       "title": "FinOps",
@@ -2350,6 +2353,98 @@
         }
       },
       "title": "Topology",
+      "type": "object"
+    },
+    "TrafficUsage": {
+      "additionalProperties": false,
+      "description": "Traffic assumptions of the cost estimate; unset values come from the profile.",
+      "properties": {
+        "requests_millions": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "HTTP requests a month, in millions",
+          "title": "Requests Millions"
+        },
+        "data_out_gb": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "GB a month sent to users and by workflows",
+          "title": "Data Out Gb"
+        },
+        "data_gb": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "database, bucket or EFS data, in GB",
+          "title": "Data Gb"
+        },
+        "logs_gb": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "logs ingested a month, GB",
+          "title": "Logs Gb"
+        },
+        "average_acu": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "average Aurora Serverless capacity",
+          "title": "Average Acu"
+        },
+        "average_workers": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "average running workers (queue modes)",
+          "title": "Average Workers"
+        }
+      },
+      "title": "TrafficUsage",
       "type": "object"
     },
     "Usage": {

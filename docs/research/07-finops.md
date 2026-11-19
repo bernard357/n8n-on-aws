@@ -100,9 +100,50 @@ Rules:
 - `nat: none` → tasks get public IPs in public subnets. The paid-licence egress rule L9 is then satisfied.
 - Estimate > `finops.max_monthly_usd` → `plan` exits non-zero.
 
+## 7.4b The estimate (`plan --cost`)
+
+`plan` prints a one-line monthly estimate, and `plan --cost` details it per component (compute,
+network, ingress, edge, database, queue, storage, security, observability), in two columns:
+
+- **fixed**: what the deployment costs at its minimum size with no traffic (tasks at `min`, Aurora at
+  its floor, NAT, ALB, public IPv4, ElastiCache Serverless minimum, secrets, dashboard and alarms);
+- **usage**: what follows the traffic assumptions of `finops.usage` (profile defaults when unset):
+  requests, data out, data stored, logs, average ACU and workers above their minimum.
+
+Prices come from `src/n8n_on_aws/finops/prices.json`, refreshed from the AWS Price List API by
+`make prices` (on-demand, USD, dated). `plan` itself makes no AWS call. Regions without a table are
+priced as us-east-1 with a note, and so are classes missing from the table. Global list prices
+(WAF, Lambda@Edge, CloudFront, CloudWatch dashboards, alarms and metrics) are constants in
+`estimate.py`. Modelling choices, each printed with the estimate:
+
+- Fargate Spot is priced 70% below on-demand; Spot workers keep one on-demand task first.
+- Aurora with `min_acu: 0` is priced at 0.5 ACU while n8n runs (it never pauses then, see #4), and
+  for the office hours only when a schedule stops n8n.
+- ElastiCache Serverless costs its 100 MB minimum plus about 7 million ECPUs a month of n8n's idle
+  polling (measured); Redis OSS is priced as Valkey × 1.49 (serverless) or × 1.25 (nodes).
+- 20% of data out goes through the NAT; 30% of requests reach the editor (Lambda@Edge).
+- One million Aurora I/O a month per GB stored; LCUs from 25 new connections a second.
+- Free tiers are shown as notes, except CloudFront's 1 TB and 10 million requests, which are
+  always deducted. Taxes, support plans, credits and Savings Plans are not included.
+
+`finops.max_monthly_usd` turns the estimate into a guard: `plan` exits 1 and `deploy` refuses to
+run when the total is above it, with an `F2` error.
+
+| Sample | Region | Fixed | Total |
+|---|---|---:|---:|
+| `nano` (office hours, SQLite, Spot) | us-east-1 | 3 | 4 |
+| `minimal` | us-east-1 | 66 | 69 |
+| `small-team` | eu-west-1 | 88 | 91 |
+| `existing-landing-zone` | eu-west-1 | 89 | 95 |
+| `queue-workers` | us-east-1 | 174 | 187 |
+| `split-webhooks` | us-east-1 | 910 | 993 |
+| `enterprise-ha` | eu-central-1 | 1679 | 2056 |
+
+USD a month, prices of 2026-11-19, default assumptions of each profile.
+
 ## 7.5 Spikes
 
 1. TLS on the `origin: task` hop: a Caddy sidecar with Let's Encrypt via the Route 53 DNS challenge, using
    the task role, against plain HTTP with the prefix-list lock.
-2. Price List API coverage and caching for the estimator, plus an offline fallback table.
+2. ~~Price List API coverage and caching for the estimator~~: done in #8 with a dated table.
 3. ECS scheduled scaling to zero and n8n's behaviour at start-up (missed schedules).

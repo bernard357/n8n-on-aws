@@ -632,7 +632,7 @@ def finops_estimate_guard(d: Deployment) -> Iterator[Finding]:
         yield _info(
             "F2",
             "finops.max_monthly_usd",
-            "the ceiling is recorded; it is enforced once the cost estimator lands",
+            "plan and deploy stop when the monthly estimate is above this ceiling",
         )
 
 

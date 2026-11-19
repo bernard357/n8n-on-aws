@@ -652,11 +652,33 @@ class Schedule(Strict):
     stop: str = Field("19:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+class TrafficUsage(Strict):
+    """Traffic assumptions of the cost estimate; unset values come from the profile."""
+
+    requests_millions: float | None = Field(
+        None, ge=0, description="HTTP requests a month, in millions"
+    )
+    data_out_gb: float | None = Field(
+        None, ge=0, description="GB a month sent to users and by workflows"
+    )
+    data_gb: float | None = Field(
+        None, ge=0, description="database, bucket or EFS data, in GB"
+    )
+    logs_gb: float | None = Field(None, ge=0, description="logs ingested a month, GB")
+    average_acu: float | None = Field(
+        None, ge=0, description="average Aurora Serverless capacity"
+    )
+    average_workers: float | None = Field(
+        None, ge=0, description="average running workers (queue modes)"
+    )
+
+
 class FinOps(Strict):
     budget: Budget = Field(default_factory=Budget)
     anomaly_detection: bool = False
     schedule: Schedule = Field(default_factory=Schedule)
     max_monthly_usd: float | None = Field(None, gt=0)
+    usage: TrafficUsage = Field(default_factory=TrafficUsage)
 
 
 # ---------------------------------------------------------------------- root

@@ -10,12 +10,15 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from .config import LoadResult, load
 from .config.models import Deployment
 from .config.rules import Finding
 from .plan import Plan, build_plan
+
+if TYPE_CHECKING:
+    from .finops.estimate import Estimate
 
 EXIT_OK = 0
 EXIT_INVALID = 1
@@ -91,6 +94,62 @@ def _print_plan(plan: Plan, show_env: bool, out: TextIO) -> None:
         _print_findings(plan.findings, out)
 
 
+def _cost(d: Deployment, plan: Plan) -> Estimate:
+    from .finops.estimate import estimate
+
+    return estimate(d, plan)
+
+
+def _print_cost(cost: Estimate, out: TextIO) -> None:
+    where = cost.region if cost.priced_in == cost.region else f"{cost.region}*"
+    print(
+        f"\nMonthly cost estimate (USD, {where}, prices of {cost.prices_date})",
+        file=out,
+    )
+    print(f"  {'component':<14} {'fixed':>9} {'usage':>9}", file=out)
+    for component, (fixed, usage) in cost.by_component().items():
+        print(f"  {component:<14} {fixed:>9.2f} {usage:>9.2f}", file=out)
+    print(
+        f"  {'total':<14} {cost.fixed:>9.2f} {cost.usage:>9.2f}"
+        f"   = {cost.total:.2f} a month",
+        file=out,
+    )
+    print("  lines:", file=out)
+    for item in cost.items:
+        if not (item.fixed or item.usage):
+            continue
+        note = f"  ({item.note})" if item.note else ""
+        print(
+            f"    {item.component:<13} {item.fixed + item.usage:>8.2f}  "
+            f"{item.item}{note}",
+            file=out,
+        )
+    assumed = ", ".join(f"{k} {v:g}" for k, v in cost.assumptions.items())
+    print(f"  assumptions: {assumed} (finops.usage)", file=out)
+    for note in cost.notes:
+        print(f"  note: {note}", file=out)
+    print(
+        "  fixed: at the minimum size with no traffic; usage: from the assumptions. "
+        "Taxes, support plans and credits are not included.",
+        file=out,
+    )
+
+
+def _ceiling(d: Deployment, cost: Estimate) -> Finding | None:
+    """An error when the estimate exceeds finops.max_monthly_usd."""
+    ceiling = d.finops.max_monthly_usd
+    if ceiling is None or cost.total <= ceiling:
+        return None
+    return Finding(
+        level="error",
+        code="F2",
+        path="finops.max_monthly_usd",
+        message=f"the estimate is {cost.total:.2f} USD a month "
+        f"({cost.fixed:.2f} fixed), above the ceiling of {ceiling:g}",
+        hint="see `plan --cost`; lower the sizes or raise the ceiling",
+    )
+
+
 def _load(args: argparse.Namespace, out: TextIO) -> LoadResult | None:
     path = Path(args.file)
     if not path.is_file():
@@ -115,19 +174,48 @@ def cmd_plan(args: argparse.Namespace, out: TextIO) -> int:
     result = _load(args, out)
     if result is None:
         return EXIT_USAGE
+    want_cost = getattr(args, "cost", False)
     if args.format == "json":
         payload: dict[str, object] = {
             "valid": result.ok,
             "findings": [f.model_dump() for f in result.findings],
         }
+        code = EXIT_OK if result.ok else EXIT_INVALID
         if result.ok and result.deployment is not None:
-            payload["plan"] = build_plan(result.deployment).model_dump()
+            plan = build_plan(result.deployment)
+            payload["plan"] = plan.model_dump()
+            cost = _cost(result.deployment, plan)
+            if want_cost:
+                payload["cost"] = cost.model_dump() | {
+                    "fixed": cost.fixed,
+                    "usage": cost.usage,
+                    "total": cost.total,
+                }
+            over = _ceiling(result.deployment, cost)
+            if over is not None:
+                payload["valid"] = False
+                payload["findings"].append(over.model_dump())  # type: ignore[attr-defined]
+                code = EXIT_INVALID
         print(json.dumps(payload, indent=2), file=out)
-        return EXIT_OK if result.ok else EXIT_INVALID
+        return code
     _summary(args.file, result, out)
     if not result.ok or result.deployment is None:
         return EXIT_INVALID
-    _print_plan(build_plan(result.deployment), args.show_env, out)
+    plan = build_plan(result.deployment)
+    _print_plan(plan, args.show_env, out)
+    cost = _cost(result.deployment, plan)
+    if want_cost:
+        _print_cost(cost, out)
+    else:
+        print(
+            f"\nEstimate: about {cost.total:.0f} USD a month "
+            f"({cost.fixed:.0f} fixed); details with --cost",
+            file=out,
+        )
+    over = _ceiling(result.deployment, cost)
+    if over is not None:
+        _print_findings([over], out)
+        return EXIT_INVALID
     return EXIT_OK
 
 
@@ -200,6 +288,12 @@ def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
     from .cdk import synthesis_findings
 
     blocking = [f for f in synthesis_findings(result.deployment) if f.level == "error"]
+    if verb == "deploy":
+        over = _ceiling(
+            result.deployment, _cost(result.deployment, build_plan(result.deployment))
+        )
+        if over is not None:
+            blocking.append(over)
     if blocking:
         _print_findings(blocking, out)
         return EXIT_INVALID
@@ -401,6 +495,9 @@ def build_parser() -> argparse.ArgumentParser:
     with_file(p)
     p.add_argument("--show-env", action="store_true", help="print n8n variables")
     p.add_argument("--format", choices=["text", "json"], default="text")
+    p.add_argument(
+        "--cost", action="store_true", help="detail the monthly cost estimate"
+    )
     p.set_defaults(func=cmd_plan)
 
     p = sub.add_parser("deploy", help="deploy to AWS with the CDK CLI")

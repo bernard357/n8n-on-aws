@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Monthly cost estimate (#8):
+  - `plan` prints the estimate; `plan --cost` details fixed and usage parts per component, with
+    the assumptions and the date of the prices; `--format json --cost` carries it for CI
+  - prices from the AWS Price List API in a dated table for 13 regions, refreshed by
+    `make prices`; `plan` makes no AWS call
+  - `finops.usage` holds the traffic assumptions, with defaults per profile
+  - `finops.max_monthly_usd` stops `plan` and `deploy` when the estimate is above it (`F2`)
 - Teardown fixes from the smoke test of #4–#6:
   - the edge login wall's SSM parameter belongs to the us-east-1 stack; the n8n stack only fills
     it in, so no custom resource runs and recreates its log group during `destroy`

@@ -261,7 +261,14 @@ finops:                                       # see 07-finops.md
   anomaly_detection: bool = false
   schedule: {kind: always-on | office-hours = always-on, timezone: str = UTC,
              weekdays: str = MON-FRI, start: str = "08:00", stop: str = "19:00"}
-  max_monthly_usd: float?                     # plan fails above this estimate
+  max_monthly_usd: float?                     # plan and deploy stop above the estimate
+  usage:                                      # assumptions of the estimate; unset: profile
+    requests_millions: float?                 # HTTP requests a month
+    data_out_gb: float?                       # GB a month to users and from workflows
+    data_gb: float?                           # database, bucket or EFS data
+    logs_gb: float?                           # logs ingested a month
+    average_acu: float?                       # Aurora Serverless, above min_acu
+    average_workers: float?                   # queue modes, above workers.min
 ```
 
 ## 4.4 Pydantic sketch
