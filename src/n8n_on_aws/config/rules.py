@@ -440,6 +440,13 @@ def operational_advice(d: Deployment) -> Iterator[Finding]:
         yield _warn(
             "T15", "database.deletion_protection", "production database is unprotected"
         )
+    if d.n8n.telemetry:
+        yield _info(
+            "T15",
+            "n8n.telemetry",
+            "n8n sends usage telemetry about this instance to n8n",
+            "set n8n.telemetry: false to keep the instance private",
+        )
     if d.n8n.runners.mode == "internal":
         yield _warn(
             "T15",

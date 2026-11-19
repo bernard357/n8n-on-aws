@@ -434,3 +434,19 @@ def test_f8_web_acl_cost() -> None:
     managed = {"cloudfront": {"waf": {"kind": "managed"}}}
     assert "F8" in codes(check({"ingress": managed}), "info")
     assert "F8" not in codes(check(), "info")
+
+
+def test_telemetry_is_off_unless_asked() -> None:
+    from n8n_on_aws.plan import build_plan
+
+    quiet = check()
+    assert quiet.deployment is not None
+    env = build_plan(quiet.deployment).roles[0].env
+    assert env["N8N_DIAGNOSTICS_ENABLED"] == "false"
+    assert "n8n.telemetry" not in {f.path for f in quiet.findings}
+    chatty = check({"n8n": {"telemetry": True}})
+    assert chatty.deployment is not None
+    assert (
+        build_plan(chatty.deployment).roles[0].env["N8N_DIAGNOSTICS_ENABLED"] == "true"
+    )
+    assert "n8n.telemetry" in {f.path for f in chatty.findings if f.level == "info"}

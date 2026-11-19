@@ -86,6 +86,18 @@ Alarms are always created, because the dashboard shows them. They send email onl
 6. [n8n editions and licence enforcement](docs/research/06-licensing.md)
 7. [FinOps posture](docs/research/07-finops.md)
 
+## Choosing a runtime
+
+The n8n roles (main, webhook processors, workers) are the same everywhere; `runtime` only picks
+the AWS building blocks that run them.
+
+| You are… | Use | Status |
+|---|---|---|
+| New to n8n on AWS, small or medium workload, cost-sensitive | `runtime.platform: ecs` on Fargate, `ingress.kind: cloudfront` | ✅ |
+| Handling many webhooks or a steady execution load | ECS on Fargate, `topology.mode: queue` or `split`, workers on Spot | ✅ |
+| Holding Savings Plans or Reserved Instances, or needing a hardened AMI | ECS on EC2 (`runtime.ecs.capacity: ec2`) | planned [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
+| Already running Kubernetes (Helm, GitOps, policies) | `runtime.platform: eks` | planned [#11](https://github.com/bernard357/n8n-on-aws/issues/11) |
+
 ## Sample configurations
 
 From smallest to largest, in [fixtures/configuration](fixtures/configuration):

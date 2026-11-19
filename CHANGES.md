@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Recycled from the `n8n-deployment` prototype (#15):
+  - CI on GitHub Actions: lint, sample validation, tests and a JSON Schema check, without AWS
+    credentials
+  - a "Choosing a runtime" table in the README
+  - `n8n.telemetry` (default `false`) sets `N8N_DIAGNOSTICS_ENABLED`, which n8n turns on by default
+  - its EKS adapter and ECS-on-EC2 capacity code are kept on #11 and #10
 - Monthly cost estimate (#8):
   - `plan` prints the estimate; `plan --cost` details fixed and usage parts per component, with
     the assumptions and the date of the prices; `--format json --cost` carries it for CI

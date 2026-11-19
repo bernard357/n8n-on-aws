@@ -112,6 +112,7 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
         "EXECUTIONS_DATA_SAVE_ON_SUCCESS": n8n.executions.save_on_success,
         "N8N_PUBLIC_API_DISABLED": "false" if n8n.public_api else "true",
         "N8N_METRICS": "true" if n8n.metrics or d.collects_metrics else "false",
+        "N8N_DIAGNOSTICS_ENABLED": "true" if n8n.telemetry else "false",
     }
     # N8N_WEBHOOK_URL replaces the deprecated WEBHOOK_URL from n8n 2.30.0.
     version = parse_version(n8n.version)

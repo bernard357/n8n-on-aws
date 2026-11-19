@@ -1,0 +1,47 @@
+# Lint, validate the samples, run the tests and check the JSON Schema.
+# No AWS credentials: synthesis runs locally and nothing is deployed.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # hatch-vcs derives the version from the tags
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      # Node.js runs the CDK (jsii) during synthesis, the Lambda@Edge tests and
+      # markdownlint.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: npm install --global markdownlint-cli@0.49.1
+
+      - run: make setup PYTHON_VERSION=3.12
+
+      - run: make lint
+
+      - run: make validate
+
+      - run: make test
+
+      - name: JSON Schema is up to date
+        run: |
+          make schema
+          git diff --exit-code schema/

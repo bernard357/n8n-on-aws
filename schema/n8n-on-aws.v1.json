@@ -1705,6 +1705,12 @@
           "title": "Metrics",
           "type": "boolean"
         },
+        "telemetry": {
+          "default": false,
+          "description": "send n8n's usage telemetry (N8N_DIAGNOSTICS_ENABLED)",
+          "title": "Telemetry",
+          "type": "boolean"
+        },
         "env": {
           "additionalProperties": {
             "type": "string"

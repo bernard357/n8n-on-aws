@@ -125,6 +125,9 @@ class N8n(Strict):
     executions: Executions = Field(default_factory=Executions)
     public_api: bool = True
     metrics: bool = False
+    telemetry: bool = Field(
+        False, description="send n8n's usage telemetry (N8N_DIAGNOSTICS_ENABLED)"
+    )
     env: dict[str, str] = Field(default_factory=dict)
     secret_env: dict[str, SecretRef] = Field(default_factory=dict)
 

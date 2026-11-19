@@ -86,6 +86,7 @@ n8n:
     offload_manual_to_workers: bool = true     # queue topologies only
   public_api: bool = true
   metrics: bool = false                        # N8N_METRICS → /metrics (404 at ingress)
+  telemetry: bool = false                      # N8N_DIAGNOSTICS_ENABLED (n8n's default: on)
   env: {str: str} = {}                         # raw n8n variables
   secret_env: {str: {secret: str, key: str?}} = {}
 
