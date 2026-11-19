@@ -613,6 +613,18 @@ def finops_cost_cliffs(d: Deployment) -> Iterator[Finding]:
             "provisioned Aurora has a fixed floor of several hundred USD a month",
             "use aurora-serverless or rds outside production",
         )
+    if (
+        d.database.kind == "aurora-serverless"
+        and d.database.min_acu == 0
+        and d.finops.schedule.kind == "always-on"
+    ):
+        yield _info(
+            "F3",
+            "database.min_acu",
+            "Aurora never pauses while n8n runs: n8n keeps a connection open and "
+            "pings the database every 2 seconds",
+            "min_acu: 0 saves money only when finops.schedule stops the services",
+        )
     if d.queue.kind == "elasticache" and not production:
         yield _warn(
             "F3",

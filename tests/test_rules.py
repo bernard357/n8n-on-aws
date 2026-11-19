@@ -337,6 +337,22 @@ def test_f3_cost_cliffs_outside_production() -> None:
     assert {"network.vpc.nat", "database.kind", "queue.kind"} <= warnings
 
 
+def test_f3_aurora_never_pauses_while_n8n_runs() -> None:
+    db = {"kind": "aurora-serverless", "min_acu": 0, "max_acu": 2}
+    always_on = check({"database": db})
+    paths = {f.path for f in always_on.findings if f.code == "F3"}
+    assert "database.min_acu" in paths
+    scheduled = check(
+        {
+            "database": db,
+            "environment": "dev",
+            "finops": {"schedule": {"kind": "office-hours"}},
+        }
+    )
+    paths = {f.path for f in scheduled.findings if f.code == "F3"}
+    assert "database.min_acu" not in paths
+
+
 def test_f4_budget_without_emails() -> None:
     result = check({"finops": {"budget": {"monthly_usd": 50}}})
     assert "F4" in codes(result, "warning")

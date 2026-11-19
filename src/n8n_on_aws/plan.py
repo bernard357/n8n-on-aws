@@ -17,14 +17,20 @@ from .config.rules import Finding
 
 RoleName = Literal["main", "webhook", "worker"]
 
-# Paths that external callers reach without the login wall (see 03-deployment-options).
+# Paths that external callers reach without the login wall. Checked against the
+# routes n8n 2.48 registers without its own session (see 03-deployment-options).
 PUBLIC_PATHS = [
-    "/webhook/*",
-    "/webhook-waiting/*",
-    "/form/*",
-    "/form-waiting/*",
-    "/mcp/*",
-    "/healthz*",
+    "/webhook/*",  # production webhooks, hosted chat, Slack/Telegram HITL replies
+    "/webhook-waiting/*",  # Wait node resume URLs
+    "/form/*",  # production forms (self-contained pages)
+    "/form-waiting/*",  # forms that resume a waiting execution
+    "/mcp/*",  # MCP Server Trigger
+    "/healthz*",  # liveness and readiness
+    "/mcp-server/*",  # instance-level MCP server, authenticated by n8n tokens
+    "/mcp-oauth/*",  # OAuth registration and tokens for MCP clients
+    "/.well-known/oauth-*",  # OAuth discovery for MCP clients
+    "/rest/binary-data/signed",  # signed links to binary data handed to callers
+    "/rest/oauth2-credential/client-metadata.json",  # fetched by OAuth servers
 ]
 
 
@@ -192,7 +198,6 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
     if binary == "s3" or d.storage.execution_data == "s3":
         bucket = d.storage.bucket
         region = d.aws.region or "${aws.region}"
-        env["N8N_AVAILABLE_BINARY_DATA_MODES"] = "filesystem,s3"
         env["N8N_EXTERNAL_STORAGE_S3_HOST"] = f"s3.{region}.amazonaws.com"
         env["N8N_EXTERNAL_STORAGE_S3_BUCKET_NAME"] = (
             bucket.name if bucket.kind == "existing" else "${storage.bucket}"

@@ -19,7 +19,8 @@ pick **frugal defaults**, and make the expensive choices **explicit and justifie
 5. **Guardrails in the account.** Optional AWS Budget per deployment with email alerts at 80 % and 100 %,
    and optional Cost Anomaly Detection monitor on the deployment tag.
 6. **Pay for idle only when asked.** Office-hours schedules for non-production environments scale ECS
-   services to zero at night. Aurora Serverless can go to 0 ACU, and Spot is used where interruption is
+   services to zero at night. Aurora Serverless can go to 0 ACU, but
+   only while every n8n service is stopped, because n8n keeps a connection open. Spot is used where interruption is
    harmless (workers).
 
 ## 7.2 Two ingress paths, two audiences

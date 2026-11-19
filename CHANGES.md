@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Design assumptions checked against the n8n 2.48.6 source (#4):
+  - the login wall now also lets through n8n's instance-level MCP server and its OAuth
+    endpoints (`/mcp-server/*`, `/mcp-oauth/*`, `/.well-known/oauth-*`), signed binary-data
+    links (`/rest/binary-data/signed`) and the OAuth client metadata document
+  - `N8N_AVAILABLE_BINARY_DATA_MODES` is no longer set: n8n marks it safe to remove. The binary
+    data mode stays explicit, because n8n defaults to `filesystem` outside queue mode.
+  - FinOps finding `F3`: Aurora with `min_acu: 0` never pauses while n8n runs, because n8n keeps a
+    connection open and pings every 2 seconds
 - CloudWatch dashboard per deployment, generated from the synthesized resources (#3):
   - sections for CloudFront or the ALB, each n8n role, runners, logs, the database,
     queue, EFS, bucket, NAT and origin-updater Lambda, only when they exist

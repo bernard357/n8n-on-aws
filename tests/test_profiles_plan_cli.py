@@ -125,6 +125,49 @@ def test_plan_public_paths_only_with_wall() -> None:
     assert "/webhook/*" in build_plan(walled.deployment).public_paths
 
 
+def test_public_paths_cover_n8n_routes_without_session() -> None:
+    # Routes n8n 2.48 serves to callers that carry no n8n session: webhooks,
+    # forms, MCP (trigger and instance server with its OAuth endpoints), health,
+    # signed binary-data links and the OAuth client metadata document.
+    walled = check({"auth": {"mode": "cloudfront-cognito"}})
+    assert walled.deployment is not None
+    assert build_plan(walled.deployment).public_paths == [
+        "/webhook/*",
+        "/webhook-waiting/*",
+        "/form/*",
+        "/form-waiting/*",
+        "/mcp/*",
+        "/healthz*",
+        "/mcp-server/*",
+        "/mcp-oauth/*",
+        "/.well-known/oauth-*",
+        "/rest/binary-data/signed",
+        "/rest/oauth2-credential/client-metadata.json",
+    ]
+
+
+def test_test_paths_and_oauth_callback_stay_behind_the_wall() -> None:
+    walled = check({"auth": {"mode": "cloudfront-cognito"}})
+    assert walled.deployment is not None
+    public = build_plan(walled.deployment).public_paths
+    for path in ("/webhook-test/*", "/form-test/*", "/mcp-test/*", "/rest/*"):
+        assert path not in public
+
+
+def test_binary_data_mode_is_explicit_without_deprecated_modes() -> None:
+    # n8n 2.48 defaults to `filesystem` outside queue mode, which is lost with a
+    # Fargate task, so the mode is always set; the modes list is deprecated.
+    for extra in (
+        {},
+        {"storage": {"binary_data": "s3"}, "n8n": {"license": ENTERPRISE}},
+    ):
+        result = check(extra)
+        assert result.deployment is not None
+        env = build_plan(result.deployment).roles[0].env
+        assert "N8N_DEFAULT_BINARY_DATA_MODE" in env
+        assert "N8N_AVAILABLE_BINARY_DATA_MODES" not in env
+
+
 # --------------------------------------------------------------------- cli
 
 

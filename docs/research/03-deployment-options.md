@@ -52,10 +52,13 @@ Without it, main also needs a runner sidecar for manual runs.
 | `rds` | RDS PostgreSQL, single-AZ or Multi-AZ, gp3 |
 | `external` | "Alien" database: an existing Aurora or RDS in the account, or anywhere reachable. Host, port, database, schema, plus a Secrets Manager secret for credentials. Optional security group to authorize ingress. TLS via `DB_POSTGRESDB_SSL_*`; for AWS, mount the RDS CA bundle. |
 
-Note: with `min_acu: 0`, n8n's frequent DB pings (`DB_PING_INTERVAL_SECONDS=2`) and the leader's schedule
-checks probably keep Aurora awake. Scale-to-zero only pays off if the n8n tasks also scale to zero.
-**⚠ verify** experimentally. Size pool usage too: `DB_POSTGRESDB_POOL_SIZE` (default 2) × tasks ×
-roles < `max_connections`.
+Note on `min_acu: 0` (**checked against n8n 2.48.6 source on 2026-11-19**): an Aurora Serverless v2
+instance pauses only when no user connection is open. n8n pings the database every 2 seconds
+(`DB_PING_INTERVAL_SECONDS`) and closes idle pool connections only after 30 seconds
+(`DB_POSTGRESDB_IDLE_CONNECTION_TIMEOUT`), so **Aurora never pauses while any n8n task runs**.
+Scale-to-zero pays off only when an office-hours schedule stops every n8n service. The `F3` finding
+says so. The cold start when the services come back is still to be measured on a real account (#4).
+Size pool usage too: `DB_POSTGRESDB_POOL_SIZE` (default 2) × tasks × roles < `max_connections`.
 
 Aurora DSQL is **excluded**: it is not compatible enough with PostgreSQL for n8n's TypeORM migrations
 (foreign keys, sequences).
@@ -80,9 +83,12 @@ Sentinel is not documented by n8n, so we don't support it. Use `N8N_REDIS_KEY_PR
 
 S3 auth uses the task or pod role with `N8N_EXTERNAL_STORAGE_S3_AUTH_AUTO_DETECT=true`, so there are no
 access keys. Never put a whole-bucket lifecycle rule on a bucket that holds execution data. Versioned
-buckets need `NoncurrentVersionExpiration`. **⚠ verify**: the docs disagree on 2.x defaults for
-`N8N_DEFAULT_BINARY_DATA_MODE` and on whether `N8N_AVAILABLE_BINARY_DATA_MODES` still exists. We set
-both explicitly based on `n8n.version`.
+buckets need `NoncurrentVersionExpiration`. **Checked against n8n 2.48.6 source on 2026-11-19:**
+when `N8N_DEFAULT_BINARY_DATA_MODE` is unset, n8n uses `filesystem` in regular mode and `database`
+in queue mode. On Fargate, `filesystem` without EFS loses files with the task, so we always set the
+mode. `N8N_AVAILABLE_BINARY_DATA_MODES` is deprecated ("safe to remove"), so we no longer set it. In
+`database` mode, files are capped at 512 MiB (`N8N_BINARY_DATA_DATABASE_MAX_FILE_SIZE`, at most
+1024 because of the PostgreSQL `bytea` limit).
 
 Beyond n8n's own use, the same bucket can be exposed to workflows ("heavy data exchanges") through the
 role's IAM policy on an `exchange/` prefix, so the AWS S3 node needs no static keys.
@@ -117,11 +123,25 @@ n8n must know its public URL: `N8N_HOST`, `N8N_PROTOCOL=https`, `N8N_EDITOR_BASE
 Cognito can be `create` (user pool, domain, app client, optional MFA, optional federated IdP) or
 `existing` (pool ID or ARN + client ID + domain).
 
-**Paths that must bypass the wrapper**, otherwise external callers break: `/webhook/*`,
-`/webhook-waiting/*`, `/form/*`, `/form-waiting/*`, `/mcp/*` (MCP Server Trigger), `/healthz*`, plus
-user-declared extras. `/rest/oauth2-credential/callback` must stay behind the wrapper, because the user's
-browser carries the cookie. `/webhook-test/*` and `/form-test/*` stay protected. **⚠ verify** the full
-list against the n8n version, and allow `auth.public_paths` overrides.
+**Paths that must bypass the wrapper**, otherwise external callers break. **Checked against the
+routes n8n 2.48.6 registers without its own session (2026-11-19):**
+
+| Path | Caller |
+|---|---|
+| `/webhook/*` | production webhooks, hosted chat of the Chat Trigger, Slack and Telegram human-in-the-loop replies |
+| `/webhook-waiting/*`, `/form-waiting/*` | resume URLs of Wait nodes and waiting forms |
+| `/form/*` | production forms (the pages are self-contained, no `/assets` needed) |
+| `/mcp/*` | MCP Server Trigger |
+| `/mcp-server/*`, `/mcp-oauth/*`, `/.well-known/oauth-*` | n8n's instance-level MCP server and the OAuth endpoints its clients use (n8n checks its own tokens) |
+| `/rest/binary-data/signed` | signed links to binary data that workflows hand to callers |
+| `/rest/oauth2-credential/client-metadata.json` | OAuth client metadata document, fetched by authorization servers |
+| `/healthz*` | liveness and readiness |
+
+`/rest/oauth2-credential/callback` must stay behind the wrapper, because the user's browser carries
+the cookie. `/webhook-test/*`, `/form-test/*` and `/mcp-test/*` stay protected, as do the rest of
+`/rest/*` and the editor. The public API (`/api/v1/*`, API key) is not opened by default; add it to
+`auth.public_paths` when scripts call it from outside. The paths assume the default
+`N8N_ENDPOINT_*` names.
 
 ### Network
 
