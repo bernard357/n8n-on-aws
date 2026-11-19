@@ -3,7 +3,7 @@
 ## 5.1 Verbs
 
 ```text
-n8n-on-aws init      [-o n8n.yaml] [--from minimal|nano|...] [--plain]   # assistant
+n8n-on-aws init      [-o n8n.yaml] [--from SAMPLE] [--offline] [--plain] [--force] [--yes]
 n8n-on-aws validate  -f FILE                          # schema + n8n rules, no AWS calls
 n8n-on-aws plan      -f FILE [--cost] [--show-env]    # resolved config + provenance, stacks, roles
 n8n-on-aws deploy    -f FILE [--dry-run] [--set k=v]… [--yes] [--require-approval never|broadening]
@@ -53,11 +53,27 @@ Every lookup is read-only and optional: `--offline` turns lists into free-text p
 only builds a dict and passes it through the same pydantic models, so it cannot produce a file that
 `validate` would reject.
 
-**UI choice.** Start with **questionary** (or Rich prompts): simple and linear, works over SSH and in CI
-logs, and is easy to test with stub answers. Add a **Textual** full-screen form later as `init --tui`
-when the question tree stabilizes. Textual is worth it for live preview (YAML on the right, cost estimate
-updating), but it costs more to build and test. Both front-ends share one `Wizard` model of
-questions and conditions.
+**UI choice (as built in #9).** Plain prompts on standard input: numbered choices with a default,
+free text with a check. They work over SSH, in CI logs and with piped answers, and add **no runtime
+dependency**. The questions live in `wizard/flow.py` and only talk to a small `Prompter` interface
+(`say`, `text`, `choose`, `confirm`), so tests drive every branch with a `ScriptedPrompter` that
+answers by key. A richer front-end (questionary, or a Textual form with a live YAML and cost
+preview as `init --tui`) can implement the same interface later.
+
+**As built:**
+
+- Lookups run the AWS CLI (`wizard/lookups.py`), like `cleanup` and `make prices`, behind an
+  injectable runner. `--offline`, a missing CLI or missing credentials turn every list into a typed
+  value.
+- The size question shows each profile's estimate in the chosen region (#8); the summary prints
+  the plan and the full estimate; the budget question suggests 125% of the estimate.
+- The answers become the same dict a user would write, then go through the profile merge, the
+  models and the rules. On errors nothing is written. Every key whose removal leaves the resolved
+  deployment unchanged is pruned (`profile` stays, to state intent), and a small emitter writes the
+  YAML with one comment per key, in the usual key order.
+- Not asked: ALB OIDC (six provider endpoints: edit by hand), n8n SSO, backups, Container Insights,
+  readers and sizes. They keep the profile's values and stay one edit away.
+- `--from SAMPLE` copies a shipped sample and asks only the name, region and version.
 
 ## 5.3 Package layout (proposed)
 

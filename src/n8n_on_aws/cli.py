@@ -20,6 +20,14 @@ from .plan import Plan, build_plan
 if TYPE_CHECKING:
     from .finops.estimate import Estimate
 
+# Samples ship in the wheel as n8n_on_aws/samples; from source they are fixtures.
+_PACKAGE = Path(__file__).parent
+SAMPLES = (
+    _PACKAGE / "samples"
+    if (_PACKAGE / "samples").is_dir()
+    else _PACKAGE.parents[1] / "fixtures" / "configuration"
+)
+
 EXIT_OK = 0
 EXIT_INVALID = 1
 EXIT_USAGE = 2
@@ -457,6 +465,60 @@ def cmd_cleanup(args: argparse.Namespace, out: TextIO) -> int:
     return code
 
 
+def cmd_init(args: argparse.Namespace, out: TextIO) -> int:
+    """Ask questions, then write a minimal, commented configuration file."""
+    from .wizard import (
+        Aborted,
+        ConsolePrompter,
+        Lookups,
+        from_sample,
+        interview,
+    )
+
+    target = Path(args.output)
+    if target.exists() and not args.force:
+        print(
+            f"error: {target} exists; choose another -o or add --force",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    ask = ConsolePrompter(out=out)
+    lookups = Lookups(offline=args.offline)
+    try:
+        if args.sample:
+            sample = SAMPLES / f"{args.sample}.yaml"
+            if not sample.exists():
+                names = ", ".join(sorted(p.stem for p in SAMPLES.glob("*.yaml")))
+                print(f"error: no sample {args.sample}; try {names}", file=sys.stderr)
+                return EXIT_USAGE
+            draft = from_sample(sample, ask, lookups, args.plain)
+        else:
+            draft = interview(ask, lookups, args.plain)
+    except Aborted as exc:
+        print(f"\nStopped: {exc}. Nothing was written.", file=out)
+        return EXIT_INVALID
+    print("", file=out)
+    _summary(str(target), draft.result, out)
+    if not draft.ok or draft.result.deployment is None:
+        print(
+            "Nothing was written: fix the answers above and run init again.", file=out
+        )
+        return EXIT_INVALID
+    plan = build_plan(draft.result.deployment)
+    _print_plan(plan, False, out)
+    _print_cost(_cost(draft.result.deployment, plan), out)
+    print("\n" + draft.text, file=out)
+    if not args.yes and not ask.confirm("write", f"Write {target}?", True):
+        print("Nothing was written.", file=out)
+        return EXIT_OK
+    target.write_text(draft.text, encoding="utf-8")
+    print(
+        f"Wrote {target}. Next: n8n-on-aws deploy -f {target} --dry-run",
+        file=out,
+    )
+    return EXIT_OK
+
+
 def cmd_schema(args: argparse.Namespace, out: TextIO) -> int:
     schema = Deployment.model_json_schema(by_alias=True)
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
@@ -486,6 +548,19 @@ def build_parser() -> argparse.ArgumentParser:
             metavar="KEY=VALUE",
             help="override a value, e.g. --set topology.mode=queue (repeatable)",
         )
+
+    p = sub.add_parser("init", help="answer questions, get a commented n8n.yaml")
+    p.add_argument("-o", "--output", default="n8n.yaml", help="file to write")
+    p.add_argument("--force", action="store_true", help="overwrite the file")
+    p.add_argument(
+        "--offline", action="store_true", help="no AWS lookups; type every value"
+    )
+    p.add_argument("--plain", action="store_true", help="no comments in the file")
+    p.add_argument(
+        "--from", dest="sample", metavar="SAMPLE", help="start from a sample"
+    )
+    p.add_argument("--yes", action="store_true", help="write without asking")
+    p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("validate", help="check the file against schema and rules")
     with_file(p)

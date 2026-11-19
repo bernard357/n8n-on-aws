@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `n8n-on-aws init`, an assistant that writes a minimal, commented `n8n.yaml` (#9):
+  - questions in the order of the decision tree: name and region, size with each profile's
+    estimated cost, edition and declared use (Sustainable Use License), environment and office
+    hours, ECS or EKS, network, database, queue, S3 files, ingress, domain and certificate, login
+    wall and WAF, budget
+  - read-only lookups through the AWS CLI (zones, certificates, VPCs and subnets, databases,
+    caches, secrets, EKS clusters); `--offline` asks for every value instead
+  - the file goes through the same rules as `validate`; nothing is written on errors; keys equal
+    to the profile's are left out
+  - `--from SAMPLE`, `--plain`, `-o`, `--force`, `--yes`; no new dependency
 - Recycled from the `n8n-deployment` prototype (#15):
   - CI on GitHub Actions: lint, sample validation, tests and a JSON Schema check, without AWS
     credentials

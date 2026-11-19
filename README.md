@@ -22,6 +22,8 @@ n8n-on-aws deploy -f fixtures/configuration/minimal.yaml
 ```bash
 git clone https://github.com/bernard357/n8n-on-aws.git && cd n8n-on-aws
 make setup
+.venv/bin/n8n-on-aws init                       # questions, then a commented n8n.yaml
+.venv/bin/n8n-on-aws plan -f n8n.yaml --cost
 .venv/bin/n8n-on-aws validate -f fixtures/configuration/nano.yaml
 .venv/bin/n8n-on-aws plan -f fixtures/configuration/queue-workers.yaml --show-env
 .venv/bin/n8n-on-aws plan -f fixtures/configuration/queue-workers.yaml --cost
@@ -132,7 +134,7 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Cognito at the edge (`cloudfront-cognito`, Lambda@Edge): redirect and open paths smoke-tested | sign-in and `cleanup` to check [#6](https://github.com/bernard357/n8n-on-aws/issues/6) |
 | WAF and IP allow-list on CloudFront | synthesized, smoke test pending [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
 | Cost estimate in `plan`, `max_monthly_usd` guard | ✅ [#8](https://github.com/bernard357/n8n-on-aws/issues/8) |
-| `n8n-on-aws init` assistant | planned [#9](https://github.com/bernard357/n8n-on-aws/issues/9) |
+| `n8n-on-aws init` assistant | ✅ [#9](https://github.com/bernard357/n8n-on-aws/issues/9) |
 | ECS on EC2 capacity | planned [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
 | EKS with the official Helm chart | planned [#11](https://github.com/bernard357/n8n-on-aws/issues/11) |
 | Cross-region backup copies | planned [#12](https://github.com/bernard357/n8n-on-aws/issues/12) |
