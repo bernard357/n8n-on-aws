@@ -282,3 +282,9 @@ def test_plan_shows_operations() -> None:
     path = str(FIXTURES / "enterprise-ha.yaml")
     assert cli.main(["plan", "-f", path], out) == 0
     assert "operations  : dashboard n8n-ha; alarms email" in out.getvalue()
+
+
+def test_error_queries_skip_migration_lines() -> None:
+    app, builder = sample("minimal")
+    text = body(app, builder)
+    assert "not like /migration/" in text

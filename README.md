@@ -111,7 +111,8 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Smoke test of `minimal` (CloudFront to task, Aurora Serverless, runners) on a real account | ✅ |
 | CloudWatch dashboard and alarms generated from the deployed resources | ✅ [#3](https://github.com/bernard357/n8n-on-aws/issues/3) |
 | Smoke test of the ALB and queue shapes (Spot workers, ElastiCache Serverless, NAT) and of both dashboards | ✅ [#3](https://github.com/bernard357/n8n-on-aws/issues/3) |
-| Smoke tests of the Cognito and multi-main shapes | next |
+| Smoke test of the split topology (webhook processors) behind an HTTPS ALB with a Cognito login wall | ✅ |
+| Smoke test of multi-main (needs an n8n Enterprise licence) | not planned |
 | Cognito at the edge (`cloudfront-cognito`), WAF and IP allow-list on CloudFront | planned |
 | Worker scaling on queue depth | planned (CPU scaling meanwhile) |
 | `n8n-on-aws init` assistant | planned |

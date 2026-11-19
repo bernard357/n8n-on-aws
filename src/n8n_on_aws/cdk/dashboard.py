@@ -579,7 +579,11 @@ class DashboardBuilder:
     def _logs(self) -> None:
         svc = self.service
         group = svc.logs
-        errors = r"filter @message like /(?i)(error|exception|failed)/"
+        # Migration names such as RemoveFailedExecutionStatus are not errors.
+        errors = (
+            r"filter @message like /(?i)(error|exception|failed)/"
+            r" and @message not like /migration/"
+        )
         self.add(
             LOGS,
             "Logs",

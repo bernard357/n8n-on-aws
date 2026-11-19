@@ -223,6 +223,12 @@ def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
             "Lambda leaves a log group under /aws/lambda/<name>-network-",
             file=out,
         )
+        if result.deployment.ingress.certificate.kind == "create":
+            print(
+                "note: the certificate's DNS validation record (_<hash>.<domain> "
+                "CNAME) stays in the hosted zone; delete it if the domain is gone",
+                file=out,
+            )
     out.flush()
     return subprocess.call(command)
 

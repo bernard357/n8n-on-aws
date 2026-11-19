@@ -20,6 +20,11 @@
   (`QUEUE_BULL_REDIS_HOST`), because its cluster client fails there over TLS and
   workers exited with "Failed to refresh slots cache".
 - FinOps rule `F5`: dashboard and alarm costs; production without a dashboard.
+- Smoke test of the split topology behind an HTTPS ALB with a Cognito login wall,
+  on a real sub-domain: the editor and `/rest/*` redirect to Cognito, while
+  `/webhook/*` and `/form/*` reach the webhook processors without a login. Every
+  dashboard widget showed data. The log error tables no longer match n8n migration
+  names such as `RemoveFailedExecutionStatus`.
 - CDK synthesis on ECS Fargate (#2):
   - created or existing VPC, with NAT none, instance, single or per-AZ
   - Aurora Serverless v2, provisioned Aurora, RDS, external PostgreSQL, or SQLite on EFS
