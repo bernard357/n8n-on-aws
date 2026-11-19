@@ -11,6 +11,7 @@ from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
+from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 from ..config.models import Deployment, SecretRef
 from ..plan import PUBLIC_PATHS, Plan, Role
+from . import metrics as n8n_metrics
 from . import origin_updater
 from .data import DataStack
 from .edge import EdgeStack, hosted_zone
@@ -153,6 +155,21 @@ class ServiceStack(cdk.Stack):
             self.key.grant_encrypt_decrypt(self.task_role)
         if self.data.file_system is not None:
             self.data.file_system.grant_read_write(self.task_role)
+        self.metrics_logs: logs.LogGroup | None = None
+        if self.plan.metrics_agent:
+            self.metrics_logs = logs.LogGroup(
+                self,
+                "MetricsLogs",
+                log_group_name=n8n_metrics.log_group_name(d),
+                retention=retention(d.observability.log_retention_days),
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            )
+            self.metrics_logs.grant(
+                self.task_role,
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:DescribeLogStreams",
+            )
 
     # ------------------------------------------------------------- ingress
 
@@ -245,6 +262,30 @@ class ServiceStack(cdk.Stack):
                     domain_name=d.ingress.domain,
                     validation=acm.CertificateValidation.from_dns(self.zone),
                 )
+        additional: dict[str, cloudfront.BehaviorOptions] = {}
+        if self._serves_metrics():
+            # n8n serves /metrics without authentication: answer 404 at the edge.
+            hide = cloudfront.Function(
+                self,
+                "EdgeHideMetrics",
+                comment="404 for n8n's unauthenticated /metrics",
+                code=cloudfront.FunctionCode.from_inline(
+                    "function handler(event) {"
+                    " return {statusCode: 404, statusDescription: 'Not Found'}; }"
+                ),
+                runtime=cloudfront.FunctionRuntime.JS_2_0,
+            )
+            additional[f"{n8n_metrics.METRICS_PATH}*"] = cloudfront.BehaviorOptions(
+                origin=origin,
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+                cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                function_associations=[
+                    cloudfront.FunctionAssociation(
+                        function=hide,
+                        event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                    )
+                ],
+            )
         self.distribution = cloudfront.Distribution(
             self,
             "Distribution",
@@ -257,12 +298,17 @@ class ServiceStack(cdk.Stack):
                 origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
                 compress=True,
             ),
+            additional_behaviors=additional or None,
             domain_names=[d.ingress.domain] if d.ingress.domain else None,
             certificate=certificate,
             price_class=_PRICE_CLASS[spec.price_class],
             http_version=cloudfront.HttpVersion.HTTP2_AND_3,
             minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
         )
+
+    def _serves_metrics(self) -> bool:
+        """True when n8n answers on /metrics, which must not reach the internet."""
+        return self.d.n8n.metrics or self.plan.metrics_agent
 
     # ------------------------------------------------------------- services
 
@@ -456,6 +502,17 @@ class ServiceStack(cdk.Stack):
                     stream_prefix=f"{role.name}-runners", log_group=self.logs
                 ),
             )
+        if role.name == "main" and self.metrics_logs is not None:
+            task.add_container(
+                "metrics",
+                image=ecs.ContainerImage.from_registry(n8n_metrics.AGENT_IMAGE),
+                essential=False,
+                memory_reservation_mib=64,
+                environment=n8n_metrics.agent_environment(d),
+                logging=ecs.LogDrivers.aws_logs(
+                    stream_prefix="metrics-agent", log_group=self.logs
+                ),
+            )
 
         spot = d.runtime.ecs.capacity == "fargate-spot"
         if role.name == "worker" and d.topology.workers.spot:
@@ -517,10 +574,12 @@ class ServiceStack(cdk.Stack):
             scaling.scale_on_cpu_utilization(
                 "Cpu", target_utilization_percent=d.topology.webhook.scale_on_cpu
             )
+        elif role.name == "worker" and d.scales_on_queue:
+            self._queue_scaling(scaling, service)
         elif role.name == "worker":
-            workers = d.topology.workers
-            target = workers.target if workers.scale_on == "cpu" else 70
-            scaling.scale_on_cpu_utilization("Cpu", target_utilization_percent=target)
+            scaling.scale_on_cpu_utilization(
+                "Cpu", target_utilization_percent=d.topology.workers.target
+            )
         if office_hours:
             schedule = d.finops.schedule
             zone = cdk.TimeZone.of(schedule.timezone)
@@ -544,6 +603,67 @@ class ServiceStack(cdk.Stack):
                 max_capacity=0,
                 time_zone=zone,
             )
+
+    def _queue_scaling(
+        self, scaling: ecs.ScalableTaskCount, service: ecs.FargateService
+    ) -> None:
+        """Workers follow the jobs in the queue, with CPU as a safety net.
+
+        Scale-out reads the waiting jobs, so it also starts the first worker when
+        the minimum is zero. Scale-in waits until the jobs in flight would fit on
+        one worker less. Without queue metrics, neither alarm fires, and only the
+        CPU policy, which never scales in, acts.
+        """
+        workers = self.d.topology.workers
+        minute = cdk.Duration.minutes(1)
+        waiting = n8n_metrics.metric(
+            self.d, "n8n_scaling_mode_queue_jobs_waiting", period=minute
+        )
+        scaling.scale_on_metric(
+            "QueueWaiting",
+            metric=waiting,
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+            scaling_steps=[
+                appscaling.ScalingInterval(upper=0, change=0),
+                appscaling.ScalingInterval(lower=1, change=+1),
+                appscaling.ScalingInterval(lower=workers.target, change=+2),
+                appscaling.ScalingInterval(lower=3 * workers.target, change=+4),
+            ],
+            evaluation_periods=2,
+            datapoints_to_alarm=2,
+            cooldown=cdk.Duration.minutes(2),
+            metric_aggregation_type=appscaling.MetricAggregationType.MAXIMUM,
+        )
+        spare = cloudwatch.MathExpression(
+            label="jobs beyond one worker less",
+            expression=f"w + a - (FILL(r, 0) - 1) * {workers.concurrency}",
+            using_metrics={
+                "w": waiting,
+                "a": n8n_metrics.metric(
+                    self.d, "n8n_scaling_mode_queue_jobs_active", period=minute
+                ),
+                "r": service.metric_cpu_utilization(
+                    statistic="SampleCount", period=minute
+                ),
+            },
+            period=minute,
+        )
+        scaling.scale_on_metric(
+            "QueueIdle",
+            metric=spare,
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+            scaling_steps=[
+                appscaling.ScalingInterval(upper=0, change=-1),
+                appscaling.ScalingInterval(lower=1, change=0),
+            ],
+            evaluation_periods=workers.scale_in_minutes,
+            datapoints_to_alarm=workers.scale_in_minutes,
+            cooldown=cdk.Duration.minutes(workers.scale_in_minutes),
+            metric_aggregation_type=appscaling.MetricAggregationType.MAXIMUM,
+        )
+        scaling.scale_on_cpu_utilization(
+            "Cpu", target_utilization_percent=80, disable_scale_in=True
+        )
 
     # ------------------------------------------------------------ listener
 
@@ -608,6 +728,22 @@ class ServiceStack(cdk.Stack):
         else:
             listener = alb.add_listener(
                 "Http", port=80, open=False, default_action=self._wall(main)
+            )
+        if self._serves_metrics():
+            # n8n serves /metrics without authentication: answer 404 here.
+            elbv2.ApplicationListenerRule(
+                self,
+                "HideMetrics",
+                listener=listener,
+                priority=1,
+                conditions=[
+                    elbv2.ListenerCondition.path_patterns(
+                        [n8n_metrics.METRICS_PATH, f"{n8n_metrics.METRICS_PATH}/*"]
+                    )
+                ],
+                action=elbv2.ListenerAction.fixed_response(
+                    404, content_type="text/plain", message_body="Not Found"
+                ),
             )
         priority = 10
         routed: list[str] = []

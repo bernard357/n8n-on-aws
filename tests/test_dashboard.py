@@ -200,7 +200,9 @@ def test_container_insights_adds_task_counts_and_runner_metrics() -> None:
 
 
 def _alarms(app: cdk.App, builder: DashboardBuilder) -> dict[str, Any]:
-    return n8n_template(app, builder).find_resources("AWS::CloudWatch::Alarm")
+    """The operator alarms; scaling alarms belong to Application Auto Scaling."""
+    alarms = n8n_template(app, builder).find_resources("AWS::CloudWatch::Alarm")
+    return {k: a for k, a in alarms.items() if "AlarmName" in a["Properties"]}
 
 
 def test_alarms_exist_without_emails_and_notify_nobody() -> None:
@@ -288,3 +290,22 @@ def test_error_queries_skip_migration_lines() -> None:
     app, builder = sample("minimal")
     text = body(app, builder)
     assert "not like /migration/" in text
+
+
+# ------------------------------------------------------------ queue jobs (#5)
+
+
+def test_queue_jobs_section_and_backlog_alarm() -> None:
+    app, builder = sample("queue-workers")
+    assert "Queue jobs" in builder.titles
+    assert "n8n_scaling_mode_queue_jobs_waiting" in body(app, builder)
+    names = {a["Properties"]["AlarmName"] for a in _alarms(app, builder).values()}
+    assert "n8n-queue-queue-backlog" in names
+
+
+def test_process_section_only_with_prometheus() -> None:
+    _, plain = sample("minimal")
+    assert "n8n process (main)" not in plain.titles
+    _, builder = custom({"observability": {"prometheus": "cloudwatch"}})
+    assert "n8n process (main)" in builder.titles
+    assert "Queue jobs" not in builder.titles

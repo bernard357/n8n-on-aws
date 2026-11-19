@@ -174,9 +174,13 @@ def test_queue_workers_alb_oidc_with_open_webhook_paths() -> None:
         for value in condition["PathPatternConfig"]["Values"]
     ]
     assert "/webhook/*" in paths and "/mcp/*" in paths
-    assert all(
-        rule["Properties"]["Actions"][0]["Type"] == "forward" for rule in rules.values()
-    )
+    actions = {
+        rule["Properties"]["Priority"]: rule["Properties"]["Actions"][0]["Type"]
+        for rule in rules.values()
+    }
+    # Priority 1 hides n8n's /metrics; every other rule forwards without a login.
+    assert actions.pop(1) == "fixed-response"
+    assert set(actions.values()) == {"forward"}
 
 
 def test_queue_workers_on_spot_with_on_demand_base() -> None:
@@ -518,3 +522,131 @@ def test_prefix_list_lookup_is_deleted_before_its_log_group() -> None:
     assert lookups
     for resource in lookups.values():
         assert any("CloudFrontPrefixListLogs" in dep for dep in resource["DependsOn"])
+
+
+# ------------------------------------------------------ queue-depth scaling (#5)
+
+
+def _policies(template: Template) -> dict[str, dict[str, Any]]:
+    found = template.find_resources("AWS::ApplicationAutoScaling::ScalingPolicy")
+    return {key: res["Properties"] for key, res in found.items()}
+
+
+def test_queue_workers_scale_on_waiting_jobs_with_a_cpu_safety_net() -> None:
+    t = sample("queue-workers")["n8n"]
+    worker = {k: p for k, p in _policies(t).items() if k.startswith("Worker")}
+    steps = {
+        k: p["StepScalingPolicyConfiguration"]["StepAdjustments"]
+        for k, p in worker.items()
+        if p["PolicyType"] == "StepScaling"
+    }
+    waiting = next(v for k, v in steps.items() if "QueueWaiting" in k)
+    assert [s["ScalingAdjustment"] for s in waiting] == [1, 2, 4]
+    idle = next(v for k, v in steps.items() if "QueueIdle" in k)
+    assert [s["ScalingAdjustment"] for s in idle] == [-1]
+    tracking = [
+        p for p in worker.values() if p["PolicyType"] == "TargetTrackingScaling"
+    ]
+    assert len(tracking) == 1
+    assert tracking[0]["TargetTrackingScalingPolicyConfiguration"]["DisableScaleIn"]
+    alarms = t.find_resources("AWS::CloudWatch::Alarm")
+    expressions = [
+        query["Expression"]
+        for alarm in alarms.values()
+        for query in alarm["Properties"].get("Metrics", [])
+        if "Expression" in query
+    ]
+    assert "w + a - (FILL(r, 0) - 1) * 10" in expressions
+
+
+def test_queue_workers_main_runs_a_metrics_agent() -> None:
+    t = sample("queue-workers")["n8n"]
+    main = next(c for family, c in containers(t).items() if family.endswith("-main"))
+    agent = next(c for c in main if c["Name"] == "metrics")
+    assert agent["Essential"] is False
+    env = {e["Name"]: e["Value"] for e in agent["Environment"]}
+    config = json.loads(env["CW_CONFIG_CONTENT"])
+    emf = config["logs"]["metrics_collected"]["prometheus"]["emf_processor"]
+    selectors = emf["metric_declaration"][0]["metric_selectors"]
+    assert "^n8n_scaling_mode_queue_jobs_waiting$" in selectors
+    assert emf["metric_namespace"] == "n8n-on-aws"
+    n8n = next(c for c in main if c["Name"] == "n8n")
+    n8n_env = {e["Name"]: e["Value"] for e in n8n["Environment"]}
+    assert n8n_env["N8N_METRICS"] == "true"
+    assert n8n_env["N8N_METRICS_INCLUDE_QUEUE_METRICS"] == "true"
+    t.has_resource_properties(
+        "AWS::Logs::LogGroup", {"LogGroupName": "/n8n-on-aws/n8n-queue/metrics"}
+    )
+
+
+def test_metrics_path_is_hidden_on_the_alb() -> None:
+    t = sample("queue-workers")["n8n"]
+    t.has_resource_properties(
+        "AWS::ElasticLoadBalancingV2::ListenerRule",
+        {
+            "Priority": 1,
+            "Conditions": [
+                Match.object_like(
+                    {"PathPatternConfig": {"Values": ["/metrics", "/metrics/*"]}}
+                )
+            ],
+            "Actions": [Match.object_like({"Type": "fixed-response"})],
+        },
+    )
+
+
+def test_cpu_scaling_has_no_agent_and_tracks_cpu() -> None:
+    t = synth(
+        {
+            "topology": {
+                "mode": "queue",
+                "workers": {"scale_on": "cpu", "target": 65},
+            },
+            "queue": {"kind": "elasticache-serverless"},
+        }
+    )["n8n"]
+    families = containers(t)
+    assert all(c["Name"] != "metrics" for cs in families.values() for c in cs)
+    worker = [p for k, p in _policies(t).items() if k.startswith("Worker")]
+    assert [p["PolicyType"] for p in worker] == ["TargetTrackingScaling"]
+    config = worker[0]["TargetTrackingScalingPolicyConfiguration"]
+    assert config["TargetValue"] == 65
+    assert t.find_resources("AWS::CloudFront::Function") == {}
+
+
+def test_prometheus_on_cloudfront_hides_metrics_at_the_edge() -> None:
+    t = synth({"observability": {"prometheus": "cloudwatch"}})["n8n"]
+    t.resource_count_is("AWS::CloudFront::Function", 1)
+    t.has_resource_properties(
+        "AWS::CloudFront::Distribution",
+        {
+            "DistributionConfig": Match.object_like(
+                {
+                    "CacheBehaviors": [
+                        Match.object_like(
+                            {
+                                "PathPattern": "/metrics*",
+                                "FunctionAssociations": Match.any_value(),
+                            }
+                        )
+                    ]
+                }
+            )
+        },
+    )
+    main = next(iter(containers(t).values()))
+    agent = next(c for c in main if c["Name"] == "metrics")
+    env = {e["Name"]: e["Value"] for e in agent["Environment"]}
+    selectors = json.loads(env["CW_CONFIG_CONTENT"])["logs"]["metrics_collected"][
+        "prometheus"
+    ]["emf_processor"]["metric_declaration"][0]["metric_selectors"]
+    assert "^n8n_active_workflow_count$" in selectors
+    assert not any("queue" in s for s in selectors)
+
+
+def test_queue_depth_scaling_is_no_longer_degraded() -> None:
+    result = load(FIXTURES / "queue-workers.yaml")
+    assert result.deployment is not None
+    paths = {f.path for f in synthesis_findings(result.deployment)}
+    assert "topology.workers.scale_on" not in paths
+    assert "observability.prometheus" not in paths

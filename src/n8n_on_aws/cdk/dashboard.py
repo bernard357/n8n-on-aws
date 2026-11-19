@@ -29,6 +29,7 @@ from constructs import IConstruct
 
 from ..config.models import Deployment
 from ..plan import Plan
+from . import metrics as n8n_metrics
 from .edge import EDGE_REGION
 
 if TYPE_CHECKING:
@@ -66,7 +67,16 @@ FRAMEWORK_MARKERS = (
 )
 
 # Section order on the dashboard.
-HEADER, HEALTH, INGRESS, ROLES, RUNNERS, LOGS = 0, 10, 20, 30, 35, 40
+HEADER, HEALTH, INGRESS, JOBS, ROLES, PROCESS, RUNNERS, LOGS = (
+    0,
+    10,
+    20,
+    25,
+    30,
+    33,
+    35,
+    40,
+)
 DATABASE, QUEUE, FILES, STORAGE, NETWORK, GLUE, COST = 50, 60, 70, 80, 90, 100, 110
 
 _NOT_MONITORED = "is outside this deployment and is not monitored here."
@@ -198,7 +208,9 @@ class DashboardBuilder:
         self._files()
         self._storage()
         self._ingress()
+        self._jobs()
         self._roles()
+        self._process()
         self._runners()
         self._logs()
         self._glue()
@@ -446,6 +458,114 @@ class DashboardBuilder:
                 0,
                 f"an n8n {name} target has been unhealthy for 15 minutes",
             )
+
+    def _jobs(self) -> None:
+        """Jobs in the queue, from n8n's own metrics, next to the worker count."""
+        d = self.d
+        if not (d.is_queued and self.plan.metrics_agent):
+            return
+        worker = self.service.services["worker"]
+
+        def m(name: str, label: str, statistic: str = "Maximum") -> cloudwatch.Metric:
+            return n8n_metrics.metric(d, name, statistic=statistic, label=label)
+
+        waiting = m("n8n_scaling_mode_queue_jobs_waiting", "waiting")
+        workers = d.topology.workers
+        note = (
+            f"Workers scale out from 1 waiting job, faster from {workers.target}, "
+            f"and in when the jobs in flight fit on one worker less for "
+            f"{workers.scale_in_minutes} minutes."
+            if d.scales_on_queue
+            else f"Workers scale on CPU ({workers.target}%), not on these jobs."
+        )
+        self.add(
+            JOBS,
+            "Queue jobs",
+            [
+                [_text(note, height=1)],
+                self.graphs(
+                    [
+                        (
+                            "Jobs waiting and active",
+                            [
+                                waiting,
+                                m("n8n_scaling_mode_queue_jobs_active", "active"),
+                            ],
+                        ),
+                        (
+                            "Jobs completed and failed",
+                            [
+                                m(
+                                    "n8n_scaling_mode_queue_jobs_completed",
+                                    "completed",
+                                    "Sum",
+                                ),
+                                m(
+                                    "n8n_scaling_mode_queue_jobs_failed",
+                                    "failed",
+                                    "Sum",
+                                ),
+                            ],
+                        ),
+                        (
+                            "Running workers",
+                            [
+                                worker.metric_cpu_utilization(
+                                    statistic="SampleCount", label="workers"
+                                )
+                            ],
+                        ),
+                    ],
+                    period=cdk.Duration.minutes(1),
+                ),
+            ],
+        )
+        self.alarm(
+            "QueueBacklog",
+            waiting,
+            workers.target,
+            f"{workers.target} or more jobs have waited for 15 minutes: workers are "
+            "at their maximum or cannot start",
+            evaluation_periods=15,
+            comparison=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+
+    def _process(self) -> None:
+        """n8n's process metrics, when they are published to CloudWatch."""
+        d = self.d
+        if d.observability.prometheus != "cloudwatch":
+            return
+
+        def m(name: str, label: str) -> cloudwatch.Metric:
+            return n8n_metrics.metric(d, name, label=label)
+
+        self.add(
+            PROCESS,
+            "n8n process (main)",
+            [
+                self.graphs(
+                    [
+                        (
+                            "Active workflows",
+                            [m("n8n_active_workflow_count", "active workflows")],
+                        ),
+                        (
+                            "Event loop lag p99 (s)",
+                            [m("n8n_nodejs_eventloop_lag_p99_seconds", "lag p99")],
+                        ),
+                        (
+                            "Memory (bytes)",
+                            [
+                                m("n8n_nodejs_heap_size_used_bytes", "heap used"),
+                                m("n8n_process_resident_memory_bytes", "resident"),
+                            ],
+                        ),
+                        ("Leader", [m("n8n_instance_role_leader", "leader")]),
+                    ],
+                    height=5,
+                )
+            ],
+        )
 
     def _roles(self) -> None:
         d, svc = self.d, self.service

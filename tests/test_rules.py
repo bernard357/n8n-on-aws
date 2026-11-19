@@ -375,3 +375,25 @@ def test_dashboard_period_and_range_are_checked() -> None:
     bad = check({"observability": {"dashboard": {"range": "3 hours"}}})
     assert not bad.ok
     assert check({"observability": {"dashboard": {"range": "2w"}}}).ok
+
+
+def test_t16_cpu_scaling_cannot_start_from_zero_workers() -> None:
+    queued = {"mode": "queue", "workers": {"min": 0, "scale_on": "cpu", "target": 70}}
+    result = check({"topology": queued, "queue": {"kind": "elasticache-serverless"}})
+    assert "T16" in codes(result, "error")
+    queued["workers"] = {"min": 0, "scale_on": "queue-depth"}
+    result = check({"topology": queued, "queue": {"kind": "elasticache-serverless"}})
+    assert result.ok, result.findings
+
+
+def test_t16_cpu_target_is_a_percentage() -> None:
+    queued = {"mode": "queue", "workers": {"scale_on": "cpu", "target": 5}}
+    result = check({"topology": queued, "queue": {"kind": "elasticache-serverless"}})
+    assert "T16" in codes(result, "error")
+
+
+def test_f6_metrics_cost() -> None:
+    queued = {"mode": "queue"}
+    result = check({"topology": queued, "queue": {"kind": "elasticache-serverless"}})
+    assert "F6" in codes(result, "info")
+    assert "F6" not in codes(check(), "info")

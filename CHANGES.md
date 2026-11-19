@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Worker scaling on queue depth and n8n metrics in CloudWatch (#5):
+  - a CloudWatch agent sidecar on main publishes n8n's queue gauges to the `n8n-on-aws`
+    namespace; `observability.prometheus: cloudwatch` adds five process metrics
+  - workers scale out on waiting jobs, also from zero, and in when the jobs in flight fit on one
+    worker less for `topology.workers.scale_in_minutes`; a CPU policy only scales out
+  - `/metrics` answers 404 at the ALB and at CloudFront, because n8n serves it without authentication
+  - dashboard sections "Queue jobs" and "n8n process", and a queue backlog alarm
+  - rules `T16` (CPU scaling cannot start from zero workers; CPU target is a percentage) and `F6`
+    (cost of the published metrics)
 - Design assumptions checked against the n8n 2.48.6 source (#4):
   - the login wall now also lets through n8n's instance-level MCP server and its OAuth
     endpoints (`/mcp-server/*`, `/mcp-oauth/*`, `/.well-known/oauth-*`), signed binary-data

@@ -367,6 +367,26 @@ def version_pinning(d: Deployment) -> Iterator[Finding]:
 
 
 @rule
+def worker_scaling(d: Deployment) -> Iterator[Finding]:
+    workers = d.topology.workers
+    if not d.is_queued:
+        return
+    if workers.min == 0 and workers.scale_on == "cpu":
+        yield _error(
+            "T16",
+            "topology.workers.min",
+            "CPU scaling cannot start a worker when none runs",
+            "set topology.workers.scale_on: queue-depth, or min: 1",
+        )
+    if workers.scale_on == "cpu" and not 10 <= workers.target <= 95:
+        yield _error(
+            "T16",
+            "topology.workers.target",
+            "with scale_on: cpu, target is a CPU percentage between 10 and 95",
+        )
+
+
+@rule
 def operational_advice(d: Deployment) -> Iterator[Finding]:
     if d.is_queued and d.topology.workers.concurrency < 5:
         yield _warn(
@@ -665,6 +685,22 @@ def finops_cost_cliffs(d: Deployment) -> Iterator[Finding]:
             "F4",
             "finops.budget.alert_emails",
             "a budget without alert emails notifies nobody",
+        )
+
+
+@rule
+def finops_metrics(d: Deployment) -> Iterator[Finding]:
+    count = (4 if d.is_queued else 0) + (
+        5 if d.observability.prometheus == "cloudwatch" else 0
+    )
+    if d.collects_metrics and count:
+        yield _info(
+            "F6",
+            "observability.prometheus"
+            if d.observability.prometheus == "cloudwatch"
+            else "topology.workers.scale_on",
+            f"a CloudWatch agent publishes {count} n8n metrics: about "
+            f"${0.30 * count:.2f}/month, plus a few MB of metric logs",
         )
 
 

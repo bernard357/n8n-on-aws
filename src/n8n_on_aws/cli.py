@@ -63,6 +63,11 @@ def _print_plan(plan: Plan, show_env: bool, out: TextIO) -> None:
         else "alarms notify nobody"
     )
     print(f"  operations  : {dashboard}; {notify}", file=out)
+    if plan.metrics_agent:
+        print(
+            "  n8n metrics : CloudWatch agent on main, namespace n8n-on-aws",
+            file=out,
+        )
     print("  roles:", file=out)
     for role in plan.roles:
         replicas = (

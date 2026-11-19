@@ -2471,8 +2471,17 @@
         },
         "target": {
           "default": 20,
+          "description": "waiting jobs that add a worker, or CPU % with cpu",
           "minimum": 1,
           "title": "Target",
+          "type": "integer"
+        },
+        "scale_in_minutes": {
+          "default": 5,
+          "description": "minutes the remaining jobs must fit on one worker less before it is removed (queue-depth)",
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Scale In Minutes",
           "type": "integer"
         },
         "spot": {

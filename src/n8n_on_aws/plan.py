@@ -64,6 +64,7 @@ class Plan(BaseModel):
     public_paths: list[str]
     data_services: dict[str, str]
     tags: dict[str, str]
+    metrics_agent: bool = False
     dashboard: bool = False
     alarm_emails: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
@@ -110,7 +111,7 @@ def _common_env(d: Deployment) -> tuple[dict[str, str], dict[str, SecretRef]]:
         "EXECUTIONS_DATA_PRUNE_MAX_COUNT": str(n8n.executions.max_count),
         "EXECUTIONS_DATA_SAVE_ON_SUCCESS": n8n.executions.save_on_success,
         "N8N_PUBLIC_API_DISABLED": "false" if n8n.public_api else "true",
-        "N8N_METRICS": "true" if n8n.metrics else "false",
+        "N8N_METRICS": "true" if n8n.metrics or d.collects_metrics else "false",
     }
     # N8N_WEBHOOK_URL replaces the deprecated WEBHOOK_URL from n8n 2.30.0.
     version = parse_version(n8n.version)
@@ -253,6 +254,9 @@ def build_plan(d: Deployment, findings: list[Finding] | None = None) -> Plan:
     split = topology.mode in ("split", "multi-main")
     if split:
         main_env["N8N_DISABLE_PRODUCTION_MAIN_PROCESS"] = "true"
+    if d.is_queued and d.collects_metrics:
+        # Queue gauges exist only on main instances, refreshed every 20 seconds.
+        main_env["N8N_METRICS_INCLUDE_QUEUE_METRICS"] = "true"
     roles.append(
         Role(
             name="main",
@@ -293,7 +297,8 @@ def build_plan(d: Deployment, findings: list[Finding] | None = None) -> Plan:
         worker_env = dict(env)
         worker_env["QUEUE_HEALTH_CHECK_ACTIVE"] = "true"
         scaling = (
-            f"queue depth {workers.target}/worker"
+            f"queue depth (faster from {workers.target} waiting jobs,"
+            f" in after {workers.scale_in_minutes} min)"
             if workers.scale_on == "queue-depth"
             else f"cpu {workers.target}%"
         )
@@ -350,6 +355,7 @@ def build_plan(d: Deployment, findings: list[Finding] | None = None) -> Plan:
         public_paths=public,
         data_services=services,
         tags=tags,
+        metrics_agent=d.collects_metrics,
         dashboard=d.observability.dashboard.enabled,
         alarm_emails=list(d.observability.alarms.email),
         findings=all_findings,

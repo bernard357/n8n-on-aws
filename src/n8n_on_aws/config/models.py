@@ -159,7 +159,16 @@ class Workers(Strict):
     memory: int = 2048
     concurrency: int = Field(10, ge=1, le=100)
     scale_on: Literal["queue-depth", "cpu"] = "queue-depth"
-    target: int = Field(20, ge=1)
+    target: int = Field(
+        20, ge=1, description="waiting jobs that add a worker, or CPU % with cpu"
+    )
+    scale_in_minutes: int = Field(
+        5,
+        ge=1,
+        le=60,
+        description="minutes the remaining jobs must fit on one worker less "
+        "before it is removed (queue-depth)",
+    )
     spot: bool = False
 
     @model_validator(mode="after")
@@ -687,6 +696,16 @@ class Deployment(Strict):
         if self.storage.binary_data:
             return self.storage.binary_data
         return "filesystem" if self.database.kind == "sqlite" else "database"
+
+    @property
+    def scales_on_queue(self) -> bool:
+        """True when workers scale on the number of waiting jobs."""
+        return self.is_queued and self.topology.workers.scale_on == "queue-depth"
+
+    @property
+    def collects_metrics(self) -> bool:
+        """True when a CloudWatch agent scrapes n8n's Prometheus metrics."""
+        return self.observability.prometheus == "cloudwatch" or self.scales_on_queue
 
     @property
     def has_alb(self) -> bool:

@@ -114,7 +114,7 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Smoke test of the split topology (webhook processors) behind an HTTPS ALB with a Cognito login wall | ✅ |
 | Smoke test of multi-main (needs an n8n Enterprise licence) | not planned |
 | Verify Aurora scale-to-zero, binary-data defaults and public paths | planned [#4](https://github.com/bernard357/n8n-on-aws/issues/4) |
-| Worker scaling on queue depth, n8n Prometheus metrics in CloudWatch | planned (CPU scaling meanwhile) [#5](https://github.com/bernard357/n8n-on-aws/issues/5) |
+| Worker scaling on queue depth, n8n Prometheus metrics in CloudWatch | synthesized, smoke test pending [#5](https://github.com/bernard357/n8n-on-aws/issues/5) |
 | Cognito at the edge (`cloudfront-cognito`, Lambda@Edge) | planned [#6](https://github.com/bernard357/n8n-on-aws/issues/6) |
 | WAF and IP allow-list on CloudFront | planned [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
 | Cost estimate in `plan`, `max_monthly_usd` guard | planned [#8](https://github.com/bernard357/n8n-on-aws/issues/8) |

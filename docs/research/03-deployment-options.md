@@ -73,6 +73,29 @@ Aurora DSQL is **excluded**: it is not compatible enough with PostgreSQL for n8n
 
 Sentinel is not documented by n8n, so we don't support it. Use `N8N_REDIS_KEY_PREFIX` when Redis is shared.
 
+### Worker scaling and n8n metrics
+
+n8n publishes its queue as Prometheus gauges on the **main** instance only
+(`N8N_METRICS_INCLUDE_QUEUE_METRICS=true`, refreshed every 20 seconds):
+`n8n_scaling_mode_queue_jobs_waiting`, `…_active`, `…_completed` and `…_failed`. A job waits only
+when every worker is at its concurrency, so one waiting job already means "more workers".
+
+- A CloudWatch agent sidecar in the main task scrapes `localhost:5678/metrics` every 30 seconds and
+  writes the selected metrics as EMF logs (`/n8n-on-aws/<name>/metrics`). CloudWatch turns them into
+  metrics of the `n8n-on-aws` namespace, dimension `Deployment`.
+- **Scale out**: step scaling on the waiting jobs (2 minutes): +1 worker from 1 job, +2 from `target`,
+  +4 from 3 × `target`. It works from zero workers, so `workers.min: 0` is allowed with queue depth.
+- **Scale in**: −1 worker when `waiting + active − (running − 1) × concurrency ≤ 0` for
+  `scale_in_minutes`, that is, when the jobs in flight fit on one worker less. Running workers come
+  from the `SampleCount` of the service's CPU metric, so Container Insights is not needed.
+- **Safety net**: a CPU target (80 %) that only scales out. When the queue metrics are missing, the
+  scaling alarms have no data and do nothing, so workers never scale in on a broken metric.
+- `/metrics` has no authentication in n8n, so it answers **404 at the ALB** (listener rule) and **at
+  CloudFront** (a CloudFront Function on `/metrics*`). Path matching is case-sensitive there, while
+  n8n's router is not: behind `auth.mode: none`, `/METRICS` still reaches n8n. A login wall covers it.
+- `observability.prometheus: cloudwatch` adds five process metrics (active workflows, event loop lag
+  p99, heap, resident memory, leader). Each published metric costs about $0.30 a month (`F6`).
+
 ### Binary and execution data
 
 | Setting | Options | License |

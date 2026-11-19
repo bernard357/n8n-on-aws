@@ -35,20 +35,16 @@ def synthesis_findings(d: Deployment) -> list[Finding]:
         findings.append(_not_yet("ingress.cloudfront.waf", "WAF on CloudFront"))
     if d.ingress.kind == "cloudfront" and d.auth.mode == "ip-allowlist":
         findings.append(_not_yet("auth.mode", "IP allow-list on CloudFront"))
-    if d.is_queued and d.topology.workers.scale_on == "queue-depth":
-        findings.append(
-            _degraded(
-                "topology.workers.scale_on",
-                "workers scale on CPU (70%) until queue-depth scaling lands",
-            )
-        )
     if d.backup.kind == "aws-backup" and d.backup.cross_region:
         findings.append(
             _degraded("backup.cross_region", "cross-region backup copies are ignored")
         )
-    if d.observability.prometheus != "none":
+    if d.observability.prometheus == "amp":
         findings.append(
-            _degraded("observability.prometheus", "metrics scraping is ignored")
+            _degraded(
+                "observability.prometheus",
+                "Amazon Managed Service for Prometheus is not wired yet; ignored",
+            )
         )
     if d.finops.anomaly_detection and not d.finops.budget.alert_emails:
         findings.append(

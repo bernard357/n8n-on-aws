@@ -85,7 +85,7 @@ n8n:
     save_on_success: all | none = all
     offload_manual_to_workers: bool = true     # queue topologies only
   public_api: bool = true
-  metrics: bool = false                        # N8N_METRICS → /metrics
+  metrics: bool = false                        # N8N_METRICS → /metrics (404 at ingress)
   env: {str: str} = {}                         # raw n8n variables
   secret_env: {str: {secret: str, key: str?}} = {}
 
@@ -96,7 +96,8 @@ topology:
   workers: {min: int, max: int, cpu: int, memory: int,
             concurrency: int = 10,
             scale_on: queue-depth | cpu = queue-depth,
-            target: int = 20,                  # waiting jobs per worker, or CPU %
+            target: int = 20,                  # waiting jobs for a faster scale-out, or CPU %
+            scale_in_minutes: int = 5,         # in-flight jobs fit on one worker less
             spot: bool}
 
 runtime:
@@ -248,7 +249,7 @@ observability:
     enabled: bool = true                      # nano profile: false
     period_minutes: 1 | 5 | 15 | 60 = 5
     range: str = 3h                           # <n>m, <n>h, <n>d or <n>w
-  prometheus: none | cloudwatch | amp = none
+  prometheus: none | cloudwatch | amp = none   # cloudwatch: agent sidecar on main; amp later
 
 backup:
   kind: none | aws-backup = none
@@ -325,7 +326,7 @@ The JSON Schema is exported from the models (`n8n-on-aws schema > schema/v1.json
 | Section | ECS | EKS |
 |---|---|---|
 | `topology.*` | one ECS service per role, task def with n8n + runners containers | Helm values: `main`, `webhook`, `worker` blocks; runner sidecars |
-| `workers.scale_on: queue-depth` | Step-scaling on a custom metric (Lambda or ECS sidecar publishing BullMQ waiting count) | KEDA `redis` scaler |
+| `workers.scale_on: queue-depth` | CloudWatch agent sidecar on main scrapes n8n's queue gauges into the `n8n-on-aws` namespace; step scaling out on waiting jobs (from zero workers), in when the jobs in flight fit on one worker less, plus a CPU policy that never scales in | KEDA `redis` scaler |
 | `database`, `queue`, `storage.bucket` | shared `<name>-data` stack | same |
 | `auth.alb-*` | ALB listener rules: bypass list → forward; default → authenticate then forward | ALB Ingress annotations (`alb.ingress.kubernetes.io/auth-*`) |
 | `auth.cloudfront-cognito` | `<name>-edge` stack in us-east-1 + cross-region SSM parameter | same |
