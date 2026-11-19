@@ -30,6 +30,7 @@ EXPECTED = {
     "split-webhooks": (910.37, 993.47),
     "enterprise-ha": (1679.36, 2055.90),
     "existing-landing-zone": (88.85, 94.99),
+    "ec2-capacity": (178.64, 190.54),
 }
 
 

@@ -693,13 +693,18 @@
     "Ec2Capacity": {
       "additionalProperties": false,
       "properties": {
-        "instance_type": {
-          "default": "m7g.large",
-          "title": "Instance Type",
-          "type": "string"
+        "instance_types": {
+          "description": "the first is sized against; more types diversify Spot",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Instance Types",
+          "type": "array"
         },
         "min": {
           "default": 1,
+          "description": "on-demand instances, always running",
           "minimum": 0,
           "title": "Min",
           "type": "integer"
@@ -708,6 +713,20 @@
           "default": 4,
           "minimum": 1,
           "title": "Max",
+          "type": "integer"
+        },
+        "spot_max": {
+          "default": 4,
+          "description": "Spot instances for workers, with topology.workers.spot",
+          "minimum": 1,
+          "title": "Spot Max",
+          "type": "integer"
+        },
+        "root_volume_gib": {
+          "default": 30,
+          "maximum": 1000,
+          "minimum": 30,
+          "title": "Root Volume Gib",
           "type": "integer"
         }
       },

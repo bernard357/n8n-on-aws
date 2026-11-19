@@ -29,6 +29,7 @@ SAMPLES = [
     "split-webhooks",
     "enterprise-ha",
     "existing-landing-zone",
+    "ec2-capacity",
 ]
 
 

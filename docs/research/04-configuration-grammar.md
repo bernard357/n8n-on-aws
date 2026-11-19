@@ -107,7 +107,12 @@ runtime:
     cluster: {kind: create} | {kind: existing, name: str}
     capacity: fargate | fargate-spot | ec2 = fargate
     architecture: arm64 | x86_64 = arm64
-    ec2: {instance_type: str = m7g.large, min: int = 1, max: int = 4}   # capacity=ec2
+    ec2:                                       # capacity=ec2
+      instance_types: [str] = [m7g.large]      # the first is sized against; more diversify Spot
+      min: int = 1                             # on-demand hosts, always running
+      max: int = 4
+      spot_max: int = 4                        # Spot hosts for workers, with topology.workers.spot
+      root_volume_gib: int = 30                # gp3, encrypted
     exec: bool = false                         # ECS Exec; turning it on later needs new tasks
   eks:
     cluster:

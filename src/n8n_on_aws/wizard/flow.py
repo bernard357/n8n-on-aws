@@ -12,8 +12,8 @@ import math
 import re
 from typing import Any
 
+from ..config import instances, resolve
 from ..config import licensing as lic
-from ..config import resolve
 from ..config.models import Deployment
 from ..config.profiles import PROFILES
 from ..plan import build_plan
@@ -293,12 +293,20 @@ class Flow:
             [
                 Choice(value="ecs", label="Amazon ECS on Fargate (recommended)"),
                 Choice(
+                    value="ecs-ec2",
+                    label="Amazon ECS on EC2 hosts: steady load, Savings Plans, "
+                    "more memory per vCPU",
+                ),
+                Choice(
                     value="eks",
                     label="Amazon EKS: planned (#11), validates and plans only",
                 ),
             ],
             "ecs",
         )
+        if platform == "ecs-ec2":
+            self.hosts()
+            return
         if platform != "eks":
             return
         self.set("runtime.platform", "eks", "EKS is planned: validate and plan only")
@@ -320,6 +328,37 @@ class Flow:
                 "n8n is installed in this cluster",
             )
 
+    def hosts(self) -> None:
+        self.set("runtime.ecs.capacity", "ec2", "an Auto Scaling group of ECS hosts")
+        deployment = self.resolved()
+        arm = deployment.runtime.ecs.architecture == "arm64"
+        types = (
+            ["m7g.large", "m7g.xlarge", "r7g.large", "c7g.large", "t4g.large"]
+            if arm
+            else ["m7i.large", "m7i.xlarge", "r7i.large", "c7i.large", "t3.large"]
+        )
+        tasks = [x for group in instances.placement(deployment).values() for x in group]
+
+        def fits(name: str) -> bool:
+            spec = instances.spec(name)
+            return spec is not None and all(
+                x.cpu <= spec.cpu_units and x.memory <= spec.task_memory_mib
+                for x in tasks
+            )
+
+        offered = [t for t in types if fits(t)] or types
+        name = self.ask.choose(
+            "instance_type",
+            "Instance type of the hosts",
+            [Choice(value=t, label=_host_label(t)) for t in offered],
+            offered[0],
+        )
+        self.set(
+            "runtime.ecs.ec2.instance_types",
+            [name],
+            "ECS hosts; add types to diversify Spot",
+        )
+
     def network(self) -> None:
         region = self.data["aws"]["region"]
         mode = self.ask.choose(
@@ -334,15 +373,17 @@ class Flow:
         if mode == "create":
             deployment = self.resolved()
             created = deployment.network.vpc
-            if (
+            on_hosts = (
                 deployment.runtime.platform == "eks"
-                and created.kind == "create"
-                and created.nat == "none"
-            ):
+                or deployment.runtime.ecs.capacity == "ec2"
+            )
+            if on_hosts and created.kind == "create" and created.nat == "none":
                 self.set(
                     "network.vpc.nat",
                     "single",
-                    "EKS nodes run in private subnets and need a NAT",
+                    "EKS nodes run in private subnets and need a NAT"
+                    if deployment.runtime.platform == "eks"
+                    else "tasks on EC2 hosts have no public IP and need a NAT",
                 )
             return
         vpc_id = self.pick(
@@ -522,6 +563,12 @@ class Flow:
                 "ingress.cloudfront.origin",
                 "alb",
                 "CloudFront to the task cannot route webhook processors",
+            )
+        elif kind == "cloudfront" and deployment.runtime.ecs.capacity == "ec2":
+            self.set(
+                "ingress.cloudfront.origin",
+                "alb",
+                "tasks on EC2 hosts have no public IP for CloudFront to reach",
             )
         if kind == "alb" and not self.ask.confirm(
             "public", "Reachable from the internet?", True
@@ -735,6 +782,13 @@ class Flow:
                 float(amount),
                 "plan and deploy stop above this estimate",
             )
+
+
+def _host_label(name: str) -> str:
+    spec = instances.spec(name)
+    if spec is None:
+        return name
+    return f"{name}: {spec.vcpu} vCPU, {spec.memory_gib:g} GiB"
 
 
 def _number(text: str) -> bool:

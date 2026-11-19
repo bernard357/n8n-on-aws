@@ -97,7 +97,7 @@ the AWS building blocks that run them.
 |---|---|---|
 | New to n8n on AWS, small or medium workload, cost-sensitive | `runtime.platform: ecs` on Fargate, `ingress.kind: cloudfront` | ✅ |
 | Handling many webhooks or a steady execution load | ECS on Fargate, `topology.mode: queue` or `split`, workers on Spot | ✅ |
-| Holding Savings Plans or Reserved Instances, or needing a hardened AMI | ECS on EC2 (`runtime.ecs.capacity: ec2`) | planned [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
+| Holding Savings Plans or Reserved Instances, steady load, or needing more memory per vCPU | ECS on EC2 hosts (`runtime.ecs.capacity: ec2`), Graviton by default, workers on Spot hosts | ✅ |
 | Already running Kubernetes (Helm, GitOps, policies) | `runtime.platform: eks` | planned [#11](https://github.com/bernard357/n8n-on-aws/issues/11) |
 
 ## Sample configurations
@@ -112,6 +112,7 @@ From smallest to largest, in [fixtures/configuration](fixtures/configuration):
 | `queue-workers.yaml` | Business, queue mode, Spot workers scaled on queue depth, ElastiCache Serverless, S3 binary data, Entra ID via ALB OIDC |
 | `split-webhooks.yaml` | Main + webhook + workers, CloudFront + WAF in front of the ALB, Cognito at the edge |
 | `enterprise-ha.yaml` | Multi-main Enterprise, provisioned Aurora, KMS, S3 execution data, n8n OIDC SSO |
+| `ec2-capacity.yaml` | Queue mode on ECS with EC2 hosts: Graviton on-demand group for main, Spot group from zero for workers |
 | `existing-landing-zone.yaml` | Brownfield ECS: existing VPC, cluster, Aurora, bucket, Cognito and certificate |
 | `eks-new-cluster.yaml` | New EKS Auto Mode cluster with the official n8n Helm chart |
 | `eks-existing-cluster.yaml` | Existing EKS cluster, external PostgreSQL and Redis |
@@ -135,7 +136,7 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | WAF and IP allow-list on CloudFront | synthesized, smoke test pending [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
 | Cost estimate in `plan`, `max_monthly_usd` guard | ✅ [#8](https://github.com/bernard357/n8n-on-aws/issues/8) |
 | `n8n-on-aws init` assistant | ✅ [#9](https://github.com/bernard357/n8n-on-aws/issues/9) |
-| ECS on EC2 capacity | planned [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
+| ECS on EC2 capacity (Auto Scaling groups, Spot hosts for workers) | synthesized, smoke test pending [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
 | EKS with the official Helm chart | planned [#11](https://github.com/bernard357/n8n-on-aws/issues/11) |
 | Cross-region backup copies | planned [#12](https://github.com/bernard357/n8n-on-aws/issues/12) |
 | Overview dashboard across deployments | planned [#13](https://github.com/bernard357/n8n-on-aws/issues/13) |

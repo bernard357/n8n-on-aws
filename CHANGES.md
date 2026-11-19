@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- ECS on EC2 capacity, `runtime.ecs.capacity: ec2` (#10):
+  - an Auto Scaling group of ECS-optimized Amazon Linux 2023 hosts (arm64 by default) with
+    IMDSv2, encrypted gp3 root volumes and an ECS capacity provider with managed scaling and
+    draining; with `topology.workers.spot`, a second Spot group from zero takes the workers after
+    the first
+  - grammar: `runtime.ecs.ec2.instance_types`, `min`, `max`, `spot_max`, `root_volume_gib`
+  - `T17` rejects CloudFront to the task, a VPC without NAT and an existing cluster; it checks that
+    instance types match the architecture; `T18` checks that tasks fit on the instance type and
+    warns when the hosts run out of network interfaces at full scale
+  - services are deleted before the capacity providers, and managed termination protection stays
+    off, so `destroy` is never blocked
+  - the dashboard has an ECS hosts section (instances, cluster reservation, instances leaving)
+  - the cost estimate counts hosts and their volumes; `plan` adds `F9`, EC2 against Fargate for
+    the same tasks; `make prices` also fetches EC2 instance and gp3 prices
+  - `init` offers EC2 hosts, with only the instance types the tasks fit on
+  - new sample `ec2-capacity.yaml`
+
 - `n8n-on-aws init`, an assistant that writes a minimal, commented `n8n.yaml` (#9):
   - questions in the order of the decision tree: name and region, size with each profile's
     estimated cost, edition and declared use (Sustainable Use License), environment and office

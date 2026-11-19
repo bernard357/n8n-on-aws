@@ -206,9 +206,23 @@ EcsCluster = Annotated[
 
 
 class Ec2Capacity(Strict):
-    instance_type: str = "m7g.large"
-    min: int = Field(1, ge=0)
+    instance_types: list[str] = Field(
+        default_factory=lambda: ["m7g.large"],
+        min_length=1,
+        description="the first is sized against; more types diversify Spot",
+    )
+    min: int = Field(1, ge=0, description="on-demand instances, always running")
     max: int = Field(4, ge=1)
+    spot_max: int = Field(
+        4, ge=1, description="Spot instances for workers, with topology.workers.spot"
+    )
+    root_volume_gib: int = Field(30, ge=30, le=1000)
+
+    @model_validator(mode="after")
+    def _bounds(self) -> Ec2Capacity:
+        if self.max < self.min:
+            raise ValueError("max must be greater than or equal to min")
+        return self
 
 
 class Ecs(Strict):

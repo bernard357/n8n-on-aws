@@ -60,6 +60,31 @@ CACHE_NODES = [
     "cache.r7g.xlarge",
 ]
 
+# ECS hosts with runtime.ecs.capacity ec2 (Graviton first, then x86).
+EC2_TYPES = [
+    "t4g.medium",
+    "t4g.large",
+    "t4g.xlarge",
+    "m6g.large",
+    "m6g.xlarge",
+    "m7g.medium",
+    "m7g.large",
+    "m7g.xlarge",
+    "m7g.2xlarge",
+    "m8g.large",
+    "m8g.xlarge",
+    "c7g.large",
+    "c7g.xlarge",
+    "r7g.large",
+    "r7g.xlarge",
+    "t3.medium",
+    "t3.large",
+    "m7i.large",
+    "m7i.xlarge",
+    "c7i.large",
+    "r7i.large",
+]
+
 EC2_LINUX = {
     "operatingSystem": "Linux",
     "tenancy": "Shared",
@@ -87,6 +112,7 @@ def specs() -> dict[str, Spec]:
         "nat_gateway_hour": ("AmazonEC2", "NatGateway-Hours", "", {}),
         "nat_gateway_gb": ("AmazonEC2", "NatGateway-Bytes", "", {}),
         "ec2_t4g_nano_hour": ("AmazonEC2", "BoxUsage:t4g.nano", "", EC2_LINUX),
+        "ebs_gp3_gb_month": ("AmazonEC2", "EBS:VolumeUsage.gp3", "", {}),
         "public_ipv4_hour": ("AmazonVPC", "PublicIPv4:InUseAddress", "", {}),
         "vpc_endpoint_hour": ("AmazonVPC", "VpcEndpoint-Hours", "", {}),
         "aurora_acu_hour": (
@@ -198,6 +224,20 @@ def region_prices(region: str, code: str) -> dict[str, float]:
                 break
         else:
             print(f"  {region}: no price for {key}", file=sys.stderr)
+    found.update(instance_prices(region))
+    return found
+
+
+def instance_prices(region: str) -> dict[str, float]:
+    """Linux on-demand hourly prices of EC2_TYPES, by instance type (fast)."""
+    found: dict[str, float] = {}
+    for name in EC2_TYPES:
+        filters = {"regionCode": region, "instanceType": name, **EC2_LINUX}
+        price = first_price(products("AmazonEC2", filters), "")
+        if price is None:
+            print(f"  {region}: no price for {name}", file=sys.stderr)
+            continue
+        found[f"ec2_{name}_hour"] = price
     return found
 
 

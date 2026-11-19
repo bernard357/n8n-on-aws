@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../schema/n8n-on-aws.v1.json
+# Queue mode on ECS with EC2 capacity: an Auto Scaling group of Graviton hosts
+# for main and the first worker, a Spot group from zero for the other workers.
+# For teams that hold Savings Plans, or need more memory per vCPU than Fargate.
+apiVersion: n8n-on-aws/v1
+name: n8n-ec2
+profile: medium
+
+n8n:
+  version: "2.37.1"
+  license:
+    edition: community
+    usage: {purpose: internal-business, accept_sustainable_use_license: true}
+
+runtime:
+  platform: ecs
+  ecs:
+    capacity: ec2
+    architecture: arm64
+    ec2:
+      instance_types: [m7g.large, m6g.large]
+      min: 1
+      max: 3
+      spot_max: 4
+
+topology:
+  mode: queue
+  workers: {min: 1, max: 8, cpu: 1024, memory: 2048, concurrency: 10, spot: true}
+
+network:
+  vpc: {kind: create, nat: single}
+
+ingress:
+  kind: alb
+
+finops:
+  budget: {monthly_usd: 250, alert_emails: [platform@example.com]}

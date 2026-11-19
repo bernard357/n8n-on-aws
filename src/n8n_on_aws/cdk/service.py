@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 import aws_cdk as cdk
 from aws_cdk import aws_applicationautoscaling as appscaling
+from aws_cdk import aws_autoscaling as autoscaling
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
 from aws_cdk import aws_cloudwatch as cloudwatch
 from aws_cdk import aws_cognito as cognito
+from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_elasticloadbalancingv2_actions as elb_actions
@@ -85,7 +87,9 @@ class ServiceStack(cdk.Stack):
         self.network = network
         self.data = data
         self.edge = edge
-        self.services: dict[str, ecs.FargateService] = {}
+        self.services: dict[str, ecs.BaseService] = {}
+        self.hosts: dict[str, autoscaling.AutoScalingGroup] = {}  # EC2 capacity
+        self.capacity: dict[str, ecs.AsgCapacityProvider] = {}
         self.target_groups: dict[str, elbv2.ApplicationTargetGroup] = {}
         self.alb: elbv2.ApplicationLoadBalancer | None = None
         self.distribution: cloudfront.Distribution | None = None
@@ -151,6 +155,8 @@ class ServiceStack(cdk.Stack):
                     removal_policy=cdk.RemovalPolicy.DESTROY,
                 )
                 self.cluster.node.add_dependency(insights_logs)
+            if d.runtime.ecs.capacity == "ec2":
+                self._ec2_capacity(self.cluster)
         self.logs = logs.LogGroup(
             self,
             "Logs",
@@ -185,6 +191,115 @@ class ServiceStack(cdk.Stack):
                 "logs:PutLogEvents",
                 "logs:DescribeLogStreams",
             )
+
+    def _ec2_capacity(self, cluster: ecs.Cluster) -> None:
+        """Auto Scaling groups of ECS-optimized hosts, one capacity provider each.
+
+        The on-demand group runs every role. With ``topology.workers.spot``, a
+        second group of Spot instances, from zero, takes the workers after the
+        first. Managed termination protection stays off so that ``destroy`` is
+        never blocked by a protected instance; managed draining moves tasks away
+        before an instance is removed.
+        """
+        d = self.d
+        spec = d.runtime.ecs.ec2
+        arm = d.runtime.ecs.architecture == "arm64"
+        image = ecs.EcsOptimizedImage.amazon_linux2023(
+            ecs.AmiHardwareType.ARM if arm else ecs.AmiHardwareType.STANDARD
+        )
+        role = iam.Role(
+            self,
+            "HostsRole",
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+            description=f"ECS hosts of {d.name}",
+        )
+        hosts_sg = ec2.SecurityGroup(
+            self,
+            "HostsSecurityGroup",
+            vpc=self.network.vpc,
+            description=f"ECS hosts of {d.name}; tasks have their own group",
+            allow_all_outbound=True,
+        )
+        groups = [("on-demand", "Hosts", spec.min, spec.max)]
+        if d.is_queued and d.topology.workers.spot:
+            groups.append(("spot", "SpotHosts", 0, spec.spot_max))
+        for kind, construct_id, low, high in groups:
+            spot = kind == "spot"
+            user_data = ec2.UserData.for_linux()
+            if spot:
+                # Drain the tasks of an instance as soon as Spot reclaims it.
+                user_data.add_commands(
+                    "echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config"
+                )
+            template = ec2.LaunchTemplate(
+                self,
+                f"{construct_id}Template",
+                launch_template_name=f"{d.name}-{kind}",
+                machine_image=image,
+                instance_type=ec2.InstanceType(spec.instance_types[0]),
+                role=role,
+                security_group=hosts_sg,
+                user_data=user_data,
+                require_imdsv2=True,
+                # tasks get their credentials from ECS, not from IMDS
+                http_put_response_hop_limit=1,
+                block_devices=[
+                    ec2.BlockDevice(
+                        device_name="/dev/xvda",
+                        volume=ec2.BlockDeviceVolume.ebs(
+                            spec.root_volume_gib,
+                            volume_type=ec2.EbsDeviceVolumeType.GP3,
+                            encrypted=True,
+                            delete_on_termination=True,
+                        ),
+                    )
+                ],
+            )
+            distribution = autoscaling.InstancesDistribution(
+                on_demand_base_capacity=0,
+                on_demand_percentage_above_base_capacity=0 if spot else 100,
+                on_demand_allocation_strategy=(
+                    autoscaling.OnDemandAllocationStrategy.PRIORITIZED
+                ),
+                spot_allocation_strategy=(
+                    autoscaling.SpotAllocationStrategy.PRICE_CAPACITY_OPTIMIZED
+                    if spot
+                    else None
+                ),
+            )
+            group = autoscaling.AutoScalingGroup(
+                self,
+                construct_id,
+                auto_scaling_group_name=f"{d.name}-{kind}",
+                vpc=self.network.vpc,
+                vpc_subnets=self.network.task_subnets,
+                min_capacity=low,
+                max_capacity=high,
+                mixed_instances_policy=autoscaling.MixedInstancesPolicy(
+                    launch_template=template,
+                    instances_distribution=distribution,
+                    launch_template_overrides=[
+                        autoscaling.LaunchTemplateOverrides(
+                            instance_type=ec2.InstanceType(name)
+                        )
+                        for name in spec.instance_types
+                    ],
+                ),
+                group_metrics=[autoscaling.GroupMetrics.all()],
+            )
+            provider = ecs.AsgCapacityProvider(
+                self,
+                f"{construct_id}Capacity",
+                auto_scaling_group=group,
+                capacity_provider_name=f"{d.name}-{kind}",
+                enable_managed_scaling=True,
+                enable_managed_termination_protection=False,
+                enable_managed_draining=True,
+                spot_instance_draining=spot,
+            )
+            cluster.add_asg_capacity_provider(provider, spot_instance_draining=spot)
+            self.hosts[kind] = group
+            self.capacity[kind] = provider
 
     # ------------------------------------------------------------- ingress
 
@@ -522,13 +637,21 @@ class ServiceStack(cdk.Stack):
             if d.runtime.ecs.architecture == "arm64"
             else ecs.CpuArchitecture.X86_64
         )
-        task = ecs.FargateTaskDefinition(
+        on_ec2 = d.runtime.ecs.capacity == "ec2"
+        task = ecs.TaskDefinition(
             self,
             f"{title}Task",
             family=f"{d.name}-{role.name}",
-            cpu=role.cpu,
-            memory_limit_mib=role.memory,
-            runtime_platform=ecs.RuntimePlatform(
+            compatibility=(
+                ecs.Compatibility.EC2 if on_ec2 else ecs.Compatibility.FARGATE
+            ),
+            network_mode=ecs.NetworkMode.AWS_VPC,
+            cpu=str(role.cpu),
+            memory_mib=str(role.memory),
+            # On EC2, the architecture comes from the hosts' image.
+            runtime_platform=None
+            if on_ec2
+            else ecs.RuntimePlatform(
                 cpu_architecture=architecture,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX,
             ),
@@ -640,44 +763,71 @@ class ServiceStack(cdk.Stack):
                 ),
             )
 
-        spot = d.runtime.ecs.capacity == "fargate-spot"
-        if role.name == "worker" and d.topology.workers.spot:
+        if on_ec2:
+            on_demand = self.capacity["on-demand"].capacity_provider_name
+            spot_provider = (
+                self.capacity["spot"].capacity_provider_name
+                if "spot" in self.capacity
+                else None
+            )
+        else:
+            on_demand = (
+                "FARGATE_SPOT"
+                if d.runtime.ecs.capacity == "fargate-spot"
+                else "FARGATE"
+            )
+            spot_provider = "FARGATE_SPOT"
+        if role.name == "worker" and d.topology.workers.spot and spot_provider:
+            # The first worker on-demand, the others on Spot.
             strategies = [
                 ecs.CapacityProviderStrategy(
-                    capacity_provider="FARGATE",
+                    capacity_provider="FARGATE" if not on_ec2 else on_demand,
                     base=1 if role.replicas_min else 0,
                     weight=0,
                 ),
-                ecs.CapacityProviderStrategy(
-                    capacity_provider="FARGATE_SPOT", weight=1
-                ),
+                ecs.CapacityProviderStrategy(capacity_provider=spot_provider, weight=1),
             ]
         else:
             strategies = [
-                ecs.CapacityProviderStrategy(
-                    capacity_provider="FARGATE_SPOT" if spot else "FARGATE", weight=1
-                )
+                ecs.CapacityProviderStrategy(capacity_provider=on_demand, weight=1)
             ]
         exclusive_main = role.name == "main" and d.topology.mode != "multi-main"
-        service = ecs.FargateService(
-            self,
-            f"{title}Service",
-            cluster=self.cluster,
-            task_definition=task,
-            service_name=f"{d.name}-{role.name}",
-            desired_count=role.replicas_min,
-            assign_public_ip=self.network.public_ips,
-            vpc_subnets=self.network.task_subnets,
-            security_groups=[self.network.sg_tasks],
-            capacity_provider_strategies=strategies,
-            circuit_breaker=ecs.DeploymentCircuitBreaker(enable=True, rollback=True),
-            enable_execute_command=d.runtime.ecs.exec,
-            min_healthy_percent=0 if exclusive_main else 100,
-            max_healthy_percent=100 if exclusive_main else 200,
-            health_check_grace_period=cdk.Duration.seconds(180)
+        common: dict[str, Any] = {
+            "cluster": self.cluster,
+            "task_definition": task,
+            "service_name": f"{d.name}-{role.name}",
+            "desired_count": role.replicas_min,
+            "vpc_subnets": self.network.task_subnets,
+            "security_groups": [self.network.sg_tasks],
+            "capacity_provider_strategies": strategies,
+            "circuit_breaker": ecs.DeploymentCircuitBreaker(enable=True, rollback=True),
+            "enable_execute_command": d.runtime.ecs.exec,
+            "min_healthy_percent": 0 if exclusive_main else 100,
+            "max_healthy_percent": 100 if exclusive_main else 200,
+            "health_check_grace_period": cdk.Duration.seconds(180)
             if role.name in self.target_groups
             else None,
-        )
+        }
+        service: ecs.BaseService
+        if on_ec2:
+            service = ecs.Ec2Service(
+                self,
+                f"{title}Service",
+                placement_strategies=[
+                    ecs.PlacementStrategy.spread_across(
+                        ecs.BuiltInAttributes.AVAILABILITY_ZONE
+                    ),
+                    ecs.PlacementStrategy.packed_by_memory(),
+                ],
+                **common,
+            )
+        else:
+            service = ecs.FargateService(
+                self,
+                f"{title}Service",
+                assign_public_ip=self.network.public_ips,
+                **common,
+            )
         # Delete services before the cluster's capacity provider association,
         # otherwise CloudFormation fails with "capacity provider is in use".
         if isinstance(self.cluster, ecs.Cluster):
@@ -688,7 +838,7 @@ class ServiceStack(cdk.Stack):
         self.services[role.name] = service
         self._scaling(role, service)
 
-    def _scaling(self, role: Role, service: ecs.FargateService) -> None:
+    def _scaling(self, role: Role, service: ecs.BaseService) -> None:
         d = self.d
         office_hours = d.finops.schedule.kind == "office-hours"
         if role.replicas_min == role.replicas_max and not office_hours:
@@ -731,7 +881,7 @@ class ServiceStack(cdk.Stack):
             )
 
     def _queue_scaling(
-        self, scaling: ecs.ScalableTaskCount, service: ecs.FargateService
+        self, scaling: ecs.ScalableTaskCount, service: ecs.BaseService
     ) -> None:
         """Workers follow the jobs in the queue, with CPU as a safety net.
 

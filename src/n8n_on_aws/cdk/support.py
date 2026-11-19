@@ -25,8 +25,6 @@ def synthesis_findings(d: Deployment) -> list[Finding]:
     findings: list[Finding] = []
     if d.runtime.platform == "eks":
         findings.append(_not_yet("runtime.platform", "EKS"))
-    if d.runtime.platform == "ecs" and d.runtime.ecs.capacity == "ec2":
-        findings.append(_not_yet("runtime.ecs.capacity", "ECS on EC2 capacity"))
     if d.backup.kind == "aws-backup" and d.backup.cross_region:
         findings.append(
             _degraded("backup.cross_region", "cross-region backup copies are ignored")

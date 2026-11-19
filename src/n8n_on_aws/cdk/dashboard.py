@@ -44,6 +44,7 @@ WIDTH = 24
 # Resource types an operator watches. Each one in a template needs a widget.
 MONITORED_TYPES = frozenset(
     {
+        "AWS::AutoScaling::AutoScalingGroup",
         "AWS::CloudFront::Distribution",
         "AWS::EC2::Instance",
         "AWS::EC2::NatGateway",
@@ -72,7 +73,7 @@ FRAMEWORK_MARKERS = (
 
 # Section order on the dashboard.
 HEADER, HEALTH, INGRESS, FIREWALL, LOGIN = 0, 10, 20, 21, 22
-JOBS, ROLES, PROCESS = 25, 30, 33
+JOBS, ROLES, HOSTS, PROCESS = 25, 30, 31, 33
 RUNNERS, LOGS = 35, 40
 DATABASE, QUEUE, FILES, STORAGE, NETWORK, GLUE, COST = 50, 60, 70, 80, 90, 100, 110
 
@@ -209,6 +210,7 @@ class DashboardBuilder:
         self._login()
         self._jobs()
         self._roles()
+        self._hosts()
         self._process()
         self._runners()
         self._logs()
@@ -768,6 +770,75 @@ class DashboardBuilder:
                 comparison=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
                 missing=cloudwatch.TreatMissingData.BREACHING,
             )
+
+    def _hosts(self) -> None:
+        d, svc = self.d, self.service
+        if d.runtime.platform != "ecs" or d.runtime.ecs.capacity != "ec2":
+            return
+        spec = d.runtime.ecs.ec2
+        groups = svc.hosts
+
+        def asg(name: str, kind: str, label: str) -> cloudwatch.Metric:
+            return cloudwatch.Metric(
+                namespace="AWS/AutoScaling",
+                metric_name=name,
+                dimensions_map={
+                    "AutoScalingGroupName": groups[kind].auto_scaling_group_name
+                },
+                statistic="Maximum",
+                label=label,
+            )
+
+        def cluster(name: str, label: str) -> cloudwatch.Metric:
+            return cloudwatch.Metric(
+                namespace="AWS/ECS",
+                metric_name=name,
+                dimensions_map={"ClusterName": svc.cluster.cluster_name},
+                statistic="Maximum",
+                label=label,
+            )
+
+        instances: list[cloudwatch.IMetric] = []
+        leaving: list[cloudwatch.IMetric] = []
+        for kind in groups:
+            instances += [
+                asg("GroupInServiceInstances", kind, f"{kind} in service"),
+                asg("GroupDesiredCapacity", kind, f"{kind} desired"),
+            ]
+            leaving.append(asg("GroupTerminatingInstances", kind, f"{kind}"))
+        spot = "spot" in groups
+        types = ", ".join(spec.instance_types)
+        summary = (
+            f"**hosts** · {types} · on-demand {spec.min} to {spec.max}"
+            + (f" · Spot 0 to {spec.spot_max} for workers" if spot else "")
+            + " · ECS managed scaling and draining"
+        )
+        self.add(
+            HOSTS,
+            "ECS hosts (EC2 capacity)",
+            [
+                [_text(summary, height=1)],
+                self.graphs(
+                    [
+                        ("Instances: in service and desired", instances),
+                        (
+                            "Cluster reservation (%)",
+                            [
+                                cluster("CPUReservation", "CPU reserved"),
+                                cluster("MemoryReservation", "memory reserved"),
+                            ],
+                        ),
+                        (
+                            "Instances leaving"
+                            + (" (Spot reclaims and scale-in)" if spot else ""),
+                            leaving,
+                        ),
+                    ],
+                    height=5,
+                ),
+            ],
+            covers=list(groups.values()),
+        )
 
     def _runners(self) -> None:
         d, svc = self.d, self.service

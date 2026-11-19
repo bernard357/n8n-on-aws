@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from . import instances as ec2
 from . import licensing as lic
 from .models import Deployment
 
@@ -347,6 +348,86 @@ def fargate_sizes(d: Deployment) -> Iterator[Finding]:
                 path,
                 f"{cpu} CPU units with {memory} MiB is not a valid Fargate size",
                 "see the Fargate task size table, e.g. 512/1024, 1024/2048",
+            )
+
+
+@rule
+def ec2_capacity(d: Deployment) -> Iterator[Finding]:
+    """ECS on EC2: what awsvpc tasks on an Auto Scaling group can and cannot do."""
+    if d.runtime.platform != "ecs" or d.runtime.ecs.capacity != "ec2":
+        return
+    spec = d.runtime.ecs.ec2
+    if d.runtime.ecs.cluster.kind == "existing":
+        yield _error(
+            "T17",
+            "runtime.ecs.cluster",
+            "EC2 capacity is added to a cluster this deployment creates",
+            "use cluster kind create, or capacity fargate on an existing cluster",
+        )
+    if d.ingress.kind == "cloudfront" and d.ingress.cloudfront.origin == "task":
+        yield _error(
+            "T17",
+            "ingress.cloudfront.origin",
+            "tasks on EC2 get no public IP in awsvpc mode, so CloudFront cannot "
+            "reach them directly",
+            "use ingress.cloudfront.origin alb, or ingress kind alb",
+        )
+    if d.network.vpc.kind == "create" and d.network.vpc.nat == "none":
+        yield _error(
+            "T17",
+            "network.vpc.nat",
+            "tasks on EC2 get no public IP in awsvpc mode, so they need a NAT "
+            "to reach the internet",
+            "use nat: instance, single or per-az",
+        )
+    arm = d.runtime.ecs.architecture == "arm64"
+    for index, name in enumerate(spec.instance_types):
+        path = f"runtime.ecs.ec2.instance_types[{index}]"
+        if ec2.is_arm(name) != arm:
+            yield _error(
+                "T17",
+                path,
+                f"{name} does not match architecture {d.runtime.ecs.architecture}",
+                "Graviton types (m7g, c7g, r7g, t4g) for arm64, others for x86_64",
+            )
+    instance = ec2.spec(spec.instance_types[0])
+    if instance is None:
+        yield _info(
+            "T18",
+            "runtime.ecs.ec2.instance_types",
+            f"{spec.instance_types[0]} is not in the size table: task fit and "
+            "network interfaces are not checked",
+        )
+        return
+    groups = ec2.placement(d)
+    for tasks in groups.values():
+        for x in tasks:
+            if x.cpu > instance.cpu_units or x.memory > instance.task_memory_mib:
+                yield _error(
+                    "T18",
+                    x.path,
+                    f"a task of {x.cpu} CPU units and {x.memory} MiB does not fit "
+                    f"on {instance.name} ({instance.cpu_units} units, about "
+                    f"{instance.task_memory_mib} MiB for tasks)",
+                    "pick a larger instance type, or smaller tasks",
+                )
+    limits = {"on-demand": ("max", spec.max), "spot": ("spot_max", spec.spot_max)}
+    for group, tasks in groups.items():
+        if not tasks:
+            continue
+        key, ceiling = limits[group]
+        needed = ec2.instances_for(tasks, instance, high=True)
+        if needed > ceiling:
+            slots = instance.task_slots
+            yield _warn(
+                "T18",
+                f"runtime.ecs.ec2.{key}",
+                f"at full scale the {group} tasks need {needed} {instance.name} "
+                f"instances, above {key} {ceiling}; each holds {slots} awsvpc "
+                f"task(s) at most ({instance.enis} network interfaces)",
+                f"raise {key}, pick larger types, or enable ENI trunking: "
+                "aws ecs put-account-setting-default --name awsvpcTrunking "
+                "--value enabled",
             )
 
 

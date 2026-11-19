@@ -38,7 +38,7 @@ Without it, main also needs a runner sidecar for manual runs.
 |---|---|---|
 | `ecs` + `fargate` (**default**) | ECS service per role, Fargate arm64 (Graviton) | Serverless, cheapest to operate |
 | `ecs` + `fargate-spot` | Capacity provider strategy (base on Fargate, rest on Spot) | Workers only, recommended. Main on Spot loses triggers on interruption |
-| `ecs` + `ec2` | ASG capacity provider, Graviton | Steady large loads, cheaper per vCPU |
+| `ecs` + `ec2` | Auto Scaling group of ECS-optimized AL2023 hosts (Graviton by default), capacity provider with managed scaling and draining; a second Spot group, from zero, for workers | Steady loads, Savings Plans or Reserved Instances, more memory per vCPU. Tasks keep `awsvpc` (one security group per task) but get no public IP: a NAT is required and CloudFront goes through the ALB (`T17`). Each host holds as many tasks as it has network interfaces minus one, unless ENI trunking is on (`T18`) |
 | `eks` (new cluster) | EKS **Auto Mode** (default) or managed node group, or Fargate profiles | Official n8n Helm chart, KEDA on Redis, Pod Identity, AWS LB Controller |
 | `eks` (existing cluster) | Namespace + Helm release + Pod Identity associations | We don't own the cluster's add-ons; we verify they exist |
 

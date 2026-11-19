@@ -419,7 +419,6 @@ def test_nat_instance() -> None:
             {"runtime": {"platform": "eks"}, "ingress": {"kind": "alb", **DOMAIN}},
             "runtime.platform",
         ),
-        ({"runtime": {"ecs": {"capacity": "ec2"}}}, "runtime.ecs.capacity"),
     ],
 )
 def test_deferred_features_are_reported(extra: dict[str, Any], path: str) -> None:

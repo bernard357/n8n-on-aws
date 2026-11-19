@@ -158,6 +158,25 @@ def _ceiling(d: Deployment, cost: Estimate) -> Finding | None:
     )
 
 
+def _capacity(d: Deployment, plan: Plan) -> Finding | None:
+    """EC2 hosts against Fargate, at the minimum size of the same deployment."""
+    if d.runtime.platform != "ecs" or d.runtime.ecs.capacity != "ec2":
+        return None
+    from .finops.estimate import compute_floor
+
+    hosts, fargate = compute_floor(d, plan)
+    cheaper = "below" if hosts < fargate else "above"
+    return Finding(
+        level="info",
+        code="F9",
+        path="runtime.ecs.capacity",
+        message=f"EC2 hosts cost about {hosts:.0f} USD a month at the minimum, "
+        f"{cheaper} Fargate for the same tasks ({fargate:.0f} USD), before "
+        "Savings Plans or Reserved Instances",
+        hint="EC2 pays off when the hosts are well packed and load is steady",
+    )
+
+
 def _load(args: argparse.Namespace, out: TextIO) -> LoadResult | None:
     path = Path(args.file)
     if not path.is_file():
@@ -199,6 +218,9 @@ def cmd_plan(args: argparse.Namespace, out: TextIO) -> int:
                     "usage": cost.usage,
                     "total": cost.total,
                 }
+            note = _capacity(result.deployment, plan)
+            if note is not None:
+                payload["findings"].append(note.model_dump())  # type: ignore[attr-defined]
             over = _ceiling(result.deployment, cost)
             if over is not None:
                 payload["valid"] = False
@@ -220,6 +242,9 @@ def cmd_plan(args: argparse.Namespace, out: TextIO) -> int:
             f"({cost.fixed:.0f} fixed); details with --cost",
             file=out,
         )
+    note = _capacity(result.deployment, plan)
+    if note is not None:
+        _print_findings([note], out)
     over = _ceiling(result.deployment, cost)
     if over is not None:
         _print_findings([over], out)

@@ -22,6 +22,10 @@ pick **frugal defaults**, and make the expensive choices **explicit and justifie
    services to zero at night. Aurora Serverless can go to 0 ACU, but
    only while every n8n service is stopped, because n8n keeps a connection open. Spot is used where interruption is
    harmless (workers).
+7. **Fargate first, EC2 hosts when it pays.** `runtime.ecs.capacity: ec2` runs the same tasks on an
+   Auto Scaling group: cheaper per vCPU when hosts are well packed and the load is steady, and
+   covered by Savings Plans or Reserved Instances. Its floor is `ec2.min` hosts around the clock,
+   even with office hours. `plan` compares both for the same tasks (`F9`), at on-demand prices.
 
 ## 7.2 Two ingress paths, two audiences
 

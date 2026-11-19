@@ -11,18 +11,20 @@ never subtracted silently, except CloudFront's, which is always free for the fir
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from ..config import instances as ec2
 from ..config.models import CreatedVpc, Deployment
 from ..plan import Plan
 
 HOURS = 730.0  # hours in an average month
 PRICES = Path(__file__).parent / "prices.json"
 FALLBACK_REGION = "us-east-1"
-SPOT_FACTOR = 0.30  # Fargate Spot runs up to 70% below on-demand
+SPOT_FACTOR = 0.30  # Fargate Spot and EC2 Spot run up to 70% below on-demand
 REDIS_FACTOR = {"serverless": 1.49, "nodes": 1.25}  # Redis OSS over Valkey
 NAT_SHARE = 0.2  # share of data out that workflows send through the NAT
 EDITOR_SHARE = 0.3  # share of requests that hit the editor (login wall)
@@ -178,40 +180,12 @@ def estimate(d: Deployment, plan: Plan) -> Estimate:
         return value
 
     # ------------------------------------------------------------ compute
-    arm = d.runtime.ecs.architecture == "arm64"
-    vcpu = price("fargate_arm_vcpu_hour" if arm else "fargate_vcpu_hour") or 0.0
-    gb = price("fargate_arm_gb_hour" if arm else "fargate_gb_hour") or 0.0
-    capacity_spot = d.runtime.ecs.capacity == "fargate-spot"
-    average_workers = usage.average_workers
-    for role in plan.roles:
-        hourly = role.cpu / 1024 * vcpu + role.memory / 1024 * gb
-        low = role.replicas_min
-        mean = float(low)
-        if role.name == "worker" and average_workers is not None:
-            mean = max(float(low), min(average_workers, float(role.replicas_max)))
-        spot_workers = role.name == "worker" and d.topology.workers.spot
-        if capacity_spot:
-            factor_fixed = factor_extra = SPOT_FACTOR
-        elif spot_workers:
-            # One on-demand task first, then Spot (see the capacity strategy).
-            on_demand = 1 if low >= 1 else 0
-            factor_fixed = (
-                (on_demand + (low - on_demand) * SPOT_FACTOR) / low if low else 1.0
-            )
-            factor_extra = SPOT_FACTOR
-        else:
-            factor_fixed = factor_extra = 1.0
-        spot_note = " (Spot priced 70% below on-demand)" if factor_extra < 1 else ""
-        add(
-            LineItem(
-                component="compute",
-                item=f"Fargate {role.name}: {role.cpu / 1024:g} vCPU, "
-                f"{role.memory / 1024:g} GB × {mean:g}",
-                fixed=low * hourly * on * factor_fixed,
-                usage=(mean - low) * hourly * on * factor_extra,
-                note=f"{low} to {role.replicas_max} tasks{spot_note}",
-            )
+    if d.runtime.ecs.capacity == "ec2":
+        result.items.extend(
+            _ec2_compute(d, price, on, average_workers=usage.average_workers)
         )
+    else:
+        result.items.extend(_fargate_compute(d, plan, price, on))
 
     # ------------------------------------------------------------ network
     ipv4 = price("public_ipv4_hour") or 0.0
@@ -536,3 +510,121 @@ def _alarm_count(d: Deployment, plan: Plan) -> int:
         elif role.name == "worker":
             count += 2
     return count
+
+
+def _fargate_compute(
+    d: Deployment, plan: Plan, price: Callable[[str], float | None], on: float
+) -> list[LineItem]:
+    """Fargate tasks: each role at its minimum, plus the average extra workers."""
+    found: list[LineItem] = []
+    usage = d.finops.usage
+    arm = d.runtime.ecs.architecture == "arm64"
+    vcpu = price("fargate_arm_vcpu_hour" if arm else "fargate_vcpu_hour") or 0.0
+    gb = price("fargate_arm_gb_hour" if arm else "fargate_gb_hour") or 0.0
+    capacity_spot = d.runtime.ecs.capacity == "fargate-spot"
+    average_workers = usage.average_workers
+    for role in plan.roles:
+        hourly = role.cpu / 1024 * vcpu + role.memory / 1024 * gb
+        low = role.replicas_min
+        mean = float(low)
+        if role.name == "worker" and average_workers is not None:
+            mean = max(float(low), min(average_workers, float(role.replicas_max)))
+        spot_workers = role.name == "worker" and d.topology.workers.spot
+        if capacity_spot:
+            factor_fixed = factor_extra = SPOT_FACTOR
+        elif spot_workers:
+            # One on-demand task first, then Spot (see the capacity strategy).
+            on_demand = 1 if low >= 1 else 0
+            factor_fixed = (
+                (on_demand + (low - on_demand) * SPOT_FACTOR) / low if low else 1.0
+            )
+            factor_extra = SPOT_FACTOR
+        else:
+            factor_fixed = factor_extra = 1.0
+        spot_note = " (Spot priced 70% below on-demand)" if factor_extra < 1 else ""
+        found.append(
+            LineItem(
+                component="compute",
+                item=f"Fargate {role.name}: {role.cpu / 1024:g} vCPU, "
+                f"{role.memory / 1024:g} GB × {mean:g}",
+                fixed=low * hourly * on * factor_fixed,
+                usage=(mean - low) * hourly * on * factor_extra,
+                note=f"{low} to {role.replicas_max} tasks{spot_note}",
+            )
+        )
+    return found
+
+
+def _ec2_compute(
+    d: Deployment,
+    price: Callable[[str], float | None],
+    on: float,
+    average_workers: float | None,
+) -> list[LineItem]:
+    """ECS hosts: the instances that hold the tasks, and their root volumes.
+
+    The on-demand group never goes below ``ec2.min`` instances, even when an
+    office-hours schedule stops the services; above that, instances follow the
+    tasks. Instance counts come from the first instance type of the list.
+    """
+    spec = d.runtime.ecs.ec2
+    name = spec.instance_types[0]
+    instance = ec2.spec(name)
+    hourly = price(f"ec2_{name}_hour")
+    if instance is None or hourly is None:
+        return [
+            LineItem(
+                component="compute",
+                item=f"EC2 hosts {name}",
+                note="no size or price for this type: not counted",
+            )
+        ]
+    disk = (price("ebs_gp3_gb_month") or 0.0) * spec.root_volume_gib
+    groups = ec2.placement(d)
+    if average_workers is not None:
+        for tasks in groups.values():
+            for x in tasks:
+                if x.path == "topology.workers":
+                    extra = max(0.0, average_workers - d.topology.workers.min)
+                    x.high = min(x.high, x.low + int(round(extra)))
+    found: list[LineItem] = []
+    for kind, tasks in groups.items():
+        spot = kind == "spot"
+        if not tasks and spot:
+            continue
+        floor = spec.min if not spot else 0
+        low = max(floor, ec2.instances_for(tasks, instance, high=False))
+        mean = max(low, ec2.instances_for(tasks, instance, high=True))
+        if average_workers is None:
+            mean = low
+        factor = SPOT_FACTOR if spot else 1.0
+        fixed = (floor * HOURS + (low - floor) * on) * (hourly * factor + disk / HOURS)
+        found.append(
+            LineItem(
+                component="compute",
+                item=f"EC2 {kind} hosts: {name} × {mean:g}",
+                fixed=fixed,
+                usage=(mean - low) * on * (hourly * factor + disk / HOURS),
+                note=f"{low} instance(s) at the minimum, "
+                f"{spec.root_volume_gib} GB gp3 each"
+                + (" (Spot priced 70% below on-demand)" if spot else ""),
+            )
+        )
+    return found
+
+
+def compute_floor(d: Deployment, plan: Plan) -> tuple[float, float]:
+    """Monthly compute floor of ``d`` on EC2 hosts and on Fargate, in USD."""
+    table = price_table()
+    region = d.aws.region or FALLBACK_REGION
+    prices = table.regions.get(region) or table.regions[FALLBACK_REGION]
+
+    def price(key: str) -> float | None:
+        return prices.get(key)
+
+    on = _hours_on(d)
+    on_ec2 = sum(i.fixed for i in _ec2_compute(d, price, on, None))
+    fargate = d.model_copy(deep=True)
+    fargate.runtime.ecs.capacity = "fargate"
+    on_fargate = sum(i.fixed for i in _fargate_compute(fargate, plan, price, on))
+    return on_ec2, on_fargate

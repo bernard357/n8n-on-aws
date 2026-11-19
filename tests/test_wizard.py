@@ -183,6 +183,32 @@ def test_eks_needs_a_domain_an_alb_and_a_nat() -> None:
     assert "use_domain" not in ask.asked and "ingress" not in ask.asked
 
 
+def test_ec2_hosts_get_a_nat_and_the_alb_origin() -> None:
+    draft, ask = run({**COMMUNITY, "platform": "ecs-ec2", "instance_type": "r7g.large"})
+    d = draft.result.deployment
+    assert d is not None
+    assert d.runtime.ecs.capacity == "ec2"
+    assert d.runtime.ecs.ec2.instance_types == ["r7g.large"]
+    assert d.network.vpc.kind == "create" and d.network.vpc.nat == "single"
+    assert d.ingress.kind == "cloudfront" and d.ingress.cloudfront.origin == "alb"
+    assert "instance_type" in ask.asked
+
+
+def test_ec2_hosts_offer_only_types_the_tasks_fit_on() -> None:
+    with pytest.raises(ValueError, match="not one of the choices"):
+        interview(
+            ScriptedPrompter(
+                {
+                    **COMMUNITY,
+                    "profile": "xlarge",
+                    "platform": "ecs-ec2",
+                    "instance_type": "c7g.large",
+                }
+            ),
+            OFFLINE,
+        )
+
+
 def test_existing_vpc_database_and_redis_typed_offline() -> None:
     draft, _ = run(
         {
