@@ -114,9 +114,9 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Smoke test of the ALB and queue shapes (Spot workers, ElastiCache Serverless, NAT) and of both dashboards | ✅ [#3](https://github.com/bernard357/n8n-on-aws/issues/3) |
 | Smoke test of the split topology (webhook processors) behind an HTTPS ALB with a Cognito login wall | ✅ |
 | Smoke test of multi-main (needs an n8n Enterprise licence) | not planned |
-| Verify Aurora scale-to-zero, binary-data defaults and public paths | planned [#4](https://github.com/bernard357/n8n-on-aws/issues/4) |
-| Worker scaling on queue depth, n8n Prometheus metrics in CloudWatch | synthesized, smoke test pending [#5](https://github.com/bernard357/n8n-on-aws/issues/5) |
-| Cognito at the edge (`cloudfront-cognito`, Lambda@Edge) | synthesized, smoke test pending [#6](https://github.com/bernard357/n8n-on-aws/issues/6) |
+| Verify Aurora scale-to-zero, binary-data defaults and public paths (measured on a real account) | ✅ [#4](https://github.com/bernard357/n8n-on-aws/issues/4) |
+| Worker scaling on queue depth (0 → 3 → 0 on a real account), n8n Prometheus metrics in CloudWatch | ✅ [#5](https://github.com/bernard357/n8n-on-aws/issues/5) |
+| Cognito at the edge (`cloudfront-cognito`, Lambda@Edge): redirect and open paths smoke-tested | sign-in and `cleanup` to check [#6](https://github.com/bernard357/n8n-on-aws/issues/6) |
 | WAF and IP allow-list on CloudFront | planned [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
 | Cost estimate in `plan`, `max_monthly_usd` guard | planned [#8](https://github.com/bernard357/n8n-on-aws/issues/8) |
 | `n8n-on-aws init` assistant | planned [#9](https://github.com/bernard357/n8n-on-aws/issues/9) |

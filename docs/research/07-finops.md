@@ -29,7 +29,7 @@ pick **frugal defaults**, and make the expensive choices **explicit and justifie
 |---|---|---|
 | Audience | Small teams, cost-sensitive | AWS practitioners, private and enterprise networks |
 | Fixed floor | ~$0 (CloudFront free tier: 1 TB and 10M requests a month) + Lambda@Edge per request | ALB ~$16–20/month + LCUs |
-| Login wall | `cloudfront-cognito` (Lambda@Edge) | `alb-cognito`, `alb-oidc` (built in, no Lambda) |
+| Login wall | `cloudfront-cognito` (Lambda@Edge on editor requests only, ~$0.60 per million plus duration; webhooks bypass it; `F7`) | `alb-cognito`, `alb-oidc` (built in, no Lambda) |
 | WAF | optional, at the edge | optional, on the ALB |
 | Private (internal) n8n | no | yes (`public: false`) |
 | Topologies | origin `task`: single main (with or without workers). Origin `alb`: any | any |
