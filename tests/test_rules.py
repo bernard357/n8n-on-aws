@@ -410,3 +410,27 @@ def test_t7_edge_login_wall_needs_a_domain_and_few_paths() -> None:
 def test_f7_edge_login_wall_cost() -> None:
     assert "F7" in codes(check({"auth": {"mode": "cloudfront-cognito"}}), "info")
     assert "F7" not in codes(check(), "info")
+
+
+def test_t6_existing_cloudfront_web_acl() -> None:
+    regional = "arn:aws:wafv2:eu-west-3:123456789012:regional/webacl/x/abc"
+    waf = {"cloudfront": {"waf": {"kind": "existing", "arn": regional}}}
+    result = check({"ingress": waf})
+    assert "ingress.cloudfront.waf.arn" in {f.path for f in result.findings}
+    edge = "arn:aws:wafv2:us-east-1:123456789012:global/webacl/x/abc"
+    result = check(
+        {
+            "ingress": {
+                "cloudfront": {"waf": {"kind": "existing", "arn": edge}},
+                "allowed_cidrs": ["198.51.100.0/24"],
+            },
+            "auth": {"mode": "ip-allowlist"},
+        }
+    )
+    assert "auth.mode" in {f.path for f in result.findings if f.code == "T6"}
+
+
+def test_f8_web_acl_cost() -> None:
+    managed = {"cloudfront": {"waf": {"kind": "managed"}}}
+    assert "F8" in codes(check({"ingress": managed}), "info")
+    assert "F8" not in codes(check(), "info")

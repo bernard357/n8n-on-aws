@@ -49,6 +49,7 @@ from .edge import (
 )
 from .helpers import chunks, import_secret, retention
 from .network import N8N_PORT, NetworkStack
+from .waf import needs_edge_waf, web_acl
 
 WEBHOOK_PATHS = ["/webhook/*", "/webhook-waiting/*", "/form/*", "/form-waiting/*"]
 TASK_ORIGIN_ID = "n8n-task"
@@ -89,6 +90,8 @@ class ServiceStack(cdk.Stack):
         self.distribution: cloudfront.Distribution | None = None
         self.origin_function: lambda_.Function | None = None
         self.auth_function: lambda_.Function | None = None  # when in this stack
+        self.edge_acl: wafv2.CfnWebACL | None = None  # a CloudFront web ACL we created
+        self.alb_acl: wafv2.CfnWebACL | None = None  # a regional web ACL we created
         self.operations: DashboardBuilder | None = None
         self.zone = hosted_zone(self, d) if d.ingress.domain else None
         self._imported: dict[str, secretsmanager.ISecret] = {}
@@ -331,10 +334,25 @@ class ServiceStack(cdk.Stack):
             additional_behaviors=additional or None,
             domain_names=[d.ingress.domain] if d.ingress.domain else None,
             certificate=certificate,
+            web_acl_id=self._edge_acl(),
             price_class=_PRICE_CLASS[spec.price_class],
             http_version=cloudfront.HttpVersion.HTTP2_AND_3,
             minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
         )
+
+    def _edge_acl(self) -> str | None:
+        """The CloudFront web ACL: existing, from the us-east-1 stack, or here."""
+        d = self.d
+        waf = d.ingress.cloudfront.waf
+        if waf.kind == "existing":
+            return waf.arn
+        if not needs_edge_waf(d):
+            return None
+        if self.edge is not None and self.edge.web_acl is not None:
+            self.edge_acl = self.edge.web_acl
+        else:
+            self.edge_acl = web_acl(self, d, "CLOUDFRONT")
+        return self.edge_acl.attr_arn
 
     def _edge_auth_version(self) -> lambda_.IVersion:
         """The login-wall function: from the us-east-1 stack, or from this one."""
@@ -1014,55 +1032,8 @@ class ServiceStack(cdk.Stack):
         if waf.kind == "existing":
             arn = waf.arn
         else:
-
-            def managed(name: str, priority: int, **extra: Any) -> Any:
-                return wafv2.CfnWebACL.RuleProperty(
-                    name=name,
-                    priority=priority,
-                    override_action=wafv2.CfnWebACL.OverrideActionProperty(none={}),
-                    statement=wafv2.CfnWebACL.StatementProperty(
-                        managed_rule_group_statement=wafv2.CfnWebACL.ManagedRuleGroupStatementProperty(
-                            vendor_name="AWS", name=name, **extra
-                        )
-                    ),
-                    visibility_config=_visibility(name),
-                )
-
-            acl = wafv2.CfnWebACL(
-                self,
-                "Firewall",
-                scope="REGIONAL",
-                default_action=wafv2.CfnWebACL.DefaultActionProperty(allow={}),
-                visibility_config=_visibility(f"{self.d.name}-waf"),
-                rules=[
-                    wafv2.CfnWebACL.RuleProperty(
-                        name="RateLimit",
-                        priority=0,
-                        action=wafv2.CfnWebACL.RuleActionProperty(block={}),
-                        statement=wafv2.CfnWebACL.StatementProperty(
-                            rate_based_statement=wafv2.CfnWebACL.RateBasedStatementProperty(
-                                limit=waf.rate_limit, aggregate_key_type="IP"
-                            )
-                        ),
-                        visibility_config=_visibility("RateLimit"),
-                    ),
-                    # n8n webhooks carry large bodies: count, don't block, on size.
-                    managed(
-                        "AWSManagedRulesCommonRuleSet",
-                        1,
-                        rule_action_overrides=[
-                            wafv2.CfnWebACL.RuleActionOverrideProperty(
-                                name="SizeRestrictions_BODY",
-                                action_to_use=wafv2.CfnWebACL.RuleActionProperty(
-                                    count={}
-                                ),
-                            )
-                        ],
-                    ),
-                    managed("AWSManagedRulesKnownBadInputsRuleSet", 2),
-                ],
-            )
-            arn = acl.attr_arn
+            self.alb_acl = web_acl(self, self.d, "REGIONAL")
+            arn = self.alb_acl.attr_arn
         wafv2.CfnWebACLAssociation(
             self,
             "FirewallAssociation",
@@ -1236,11 +1207,3 @@ class ServiceStack(cdk.Stack):
             cdk.CfnOutput(
                 self, "LoadBalancerDns", value=self.alb.load_balancer_dns_name
             )
-
-
-def _visibility(name: str) -> wafv2.CfnWebACL.VisibilityConfigProperty:
-    return wafv2.CfnWebACL.VisibilityConfigProperty(
-        cloud_watch_metrics_enabled=True,
-        metric_name=name,
-        sampled_requests_enabled=True,
-    )

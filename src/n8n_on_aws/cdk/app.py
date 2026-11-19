@@ -25,6 +25,7 @@ from .edge import (
 from .network import NetworkStack
 from .service import ServiceStack
 from .support import synthesis_findings
+from .waf import needs_edge_waf
 
 # Used for in-process synthesis when no account is configured: lookups then return
 # dummy values and nothing is sent to AWS. Real deployments get the CLI's account.
@@ -62,7 +63,10 @@ def bootstrap_regions(d: Deployment) -> list[str]:
     assert region is not None
     regions = [region]
     if region != EDGE_REGION and (
-        needs_edge_certificate(d) or needs_anomaly_monitor(d) or needs_edge_auth(d)
+        needs_edge_certificate(d)
+        or needs_anomaly_monitor(d)
+        or needs_edge_auth(d)
+        or needs_edge_waf(d)
     ):
         regions.append(EDGE_REGION)
     return regions
@@ -85,7 +89,10 @@ def build_app(
 
     edge: EdgeStack | None = None
     if cross_region and (
-        needs_edge_certificate(d) or needs_anomaly_monitor(d) or needs_edge_auth(d)
+        needs_edge_certificate(d)
+        or needs_anomaly_monitor(d)
+        or needs_edge_auth(d)
+        or needs_edge_waf(d)
     ):
         edge = EdgeStack(
             app,

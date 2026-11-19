@@ -14,9 +14,11 @@ from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_route53 as route53
+from aws_cdk import aws_wafv2 as wafv2
 from constructs import Construct
 
 from ..config.models import Deployment
+from .waf import needs_edge_waf, web_acl
 
 EDGE_REGION = "us-east-1"
 EDGE_AUTH_SOURCE = Path(__file__).parent / "edge_auth_function"
@@ -140,6 +142,7 @@ class EdgeStack(cdk.Stack):
 
     certificate: acm.ICertificate | None
     auth_function: lambda_.Function | None
+    web_acl: wafv2.CfnWebACL | None
 
     def __init__(
         self, scope: Construct, construct_id: str, d: Deployment, **kwargs: Any
@@ -147,6 +150,7 @@ class EdgeStack(cdk.Stack):
         super().__init__(scope, construct_id, **kwargs)
         self.certificate = None
         self.auth_function = edge_auth_function(self, d) if needs_edge_auth(d) else None
+        self.web_acl = web_acl(self, d, "CLOUDFRONT") if needs_edge_waf(d) else None
         if needs_edge_certificate(d):
             assert d.ingress.domain is not None
             zone = hosted_zone(self, d)

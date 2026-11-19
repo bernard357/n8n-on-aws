@@ -117,7 +117,7 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Verify Aurora scale-to-zero, binary-data defaults and public paths (measured on a real account) | ✅ [#4](https://github.com/bernard357/n8n-on-aws/issues/4) |
 | Worker scaling on queue depth (0 → 3 → 0 on a real account), n8n Prometheus metrics in CloudWatch | ✅ [#5](https://github.com/bernard357/n8n-on-aws/issues/5) |
 | Cognito at the edge (`cloudfront-cognito`, Lambda@Edge): redirect and open paths smoke-tested | sign-in and `cleanup` to check [#6](https://github.com/bernard357/n8n-on-aws/issues/6) |
-| WAF and IP allow-list on CloudFront | planned [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
+| WAF and IP allow-list on CloudFront | synthesized, smoke test pending [#7](https://github.com/bernard357/n8n-on-aws/issues/7) |
 | Cost estimate in `plan`, `max_monthly_usd` guard | planned [#8](https://github.com/bernard357/n8n-on-aws/issues/8) |
 | `n8n-on-aws init` assistant | planned [#9](https://github.com/bernard357/n8n-on-aws/issues/9) |
 | ECS on EC2 capacity | planned [#10](https://github.com/bernard357/n8n-on-aws/issues/10) |
@@ -126,5 +126,4 @@ The n8n version `2.37.1` in the samples is a placeholder for "a pinned release".
 | Overview dashboard across deployments | planned [#13](https://github.com/bernard357/n8n-on-aws/issues/13) |
 | CloudWatch Application Signals (spike) | planned [#14](https://github.com/bernard357/n8n-on-aws/issues/14) |
 
-Samples that use a planned feature (`split-webhooks` with WAF on CloudFront, and the EKS
-ones) validate and plan, but synthesis stops with a `C1` finding that names the feature.
+The EKS samples validate and plan, but synthesis stops with a `C1` finding until EKS lands.

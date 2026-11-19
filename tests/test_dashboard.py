@@ -20,7 +20,7 @@ from n8n_on_aws.config import resolve
 
 from .conftest import FIXTURES, check
 
-# Every ECS sample, with deferred features (C1) switched off so it synthesizes.
+# Every ECS sample; each synthesizes as is.
 SAMPLES = [
     "minimal",
     "nano",
@@ -34,9 +34,6 @@ SAMPLES = [
 
 def _sample_data(name: str) -> dict[str, Any]:
     data: dict[str, Any] = yaml.safe_load((FIXTURES / f"{name}.yaml").read_text())
-    cloudfront = data.get("ingress", {}).get("cloudfront", {})
-    if "waf" in cloudfront:
-        cloudfront["waf"] = {"kind": "none"}
     observability = data.setdefault("observability", {})
     observability.setdefault("dashboard", {})["enabled"] = True
     return data
@@ -338,4 +335,15 @@ def test_login_wall_reads_the_regional_edge_caches() -> None:
     assert '\\"region\\":\\"eu-central-1\\"' in text or "eu-central-1" in text
     names = {a["Properties"]["AlarmName"] for a in _alarms(app, builder).values()}
     assert not any("login" in name for name in names)
+    assert unmonitored(app, builder) == []
+
+
+# --------------------------------------------------------------- WAF (#7)
+
+
+def test_firewall_section_for_cloudfront_waf() -> None:
+    app, builder = sample("split-webhooks")
+    assert "Firewall: AWS WAF on CloudFront" in builder.titles
+    text = body(app, builder)
+    assert "AWS/WAFV2" in text and "BlockedRequests" in text
     assert unmonitored(app, builder) == []

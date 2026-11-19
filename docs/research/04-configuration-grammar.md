@@ -147,7 +147,7 @@ ingress:
   cloudfront:                                 # kind=cloudfront
     origin: task | alb = task                 # task: no ALB, single main replica (07-finops.md)
     price_class: 100 | 200 | all = 100
-    waf: {kind: none} | {kind: managed, rate_limit: int = 2000} | {kind: existing, arn: str}
+    waf: {kind: none} | {kind: managed, rate_limit: int = 2000} | {kind: existing, arn: str}  # global scope
 
 auth:
   mode: none | ip-allowlist | alb-cognito | alb-oidc | cloudfront-cognito = none

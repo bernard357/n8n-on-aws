@@ -25,12 +25,14 @@ from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_rds as rds
 from aws_cdk import aws_sns as sns
 from aws_cdk import aws_sns_subscriptions as subscriptions
+from aws_cdk import aws_wafv2 as wafv2
 from constructs import IConstruct
 
 from ..config.models import Deployment
 from ..plan import Plan
 from . import metrics as n8n_metrics
 from .edge import EDGE_REGION, edge_auth_function_name
+from .waf import Scope, rule_names
 
 if TYPE_CHECKING:
     from .data import DataStack
@@ -54,6 +56,7 @@ MONITORED_TYPES = frozenset(
         "AWS::RDS::DBCluster",
         "AWS::RDS::DBInstance",
         "AWS::S3::Bucket",
+        "AWS::WAFv2::WebACL",
     }
 )
 
@@ -68,7 +71,8 @@ FRAMEWORK_MARKERS = (
 )
 
 # Section order on the dashboard.
-HEADER, HEALTH, INGRESS, LOGIN, JOBS, ROLES, PROCESS = 0, 10, 20, 22, 25, 30, 33
+HEADER, HEALTH, INGRESS, FIREWALL, LOGIN = 0, 10, 20, 21, 22
+JOBS, ROLES, PROCESS = 25, 30, 33
 RUNNERS, LOGS = 35, 40
 DATABASE, QUEUE, FILES, STORAGE, NETWORK, GLUE, COST = 50, 60, 70, 80, 90, 100, 110
 
@@ -201,6 +205,7 @@ class DashboardBuilder:
         self._files()
         self._storage()
         self._ingress()
+        self._firewall()
         self._login()
         self._jobs()
         self._roles()
@@ -452,6 +457,58 @@ class DashboardBuilder:
                 0,
                 f"an n8n {name} target has been unhealthy for 15 minutes",
             )
+
+    def _firewall(self) -> None:
+        """Allowed and blocked requests of each web ACL this deployment created."""
+        svc = self.service
+        if svc.edge_acl is not None:
+            self._web_acl("CloudFront", "CLOUDFRONT", svc.edge_acl)
+        if svc.alb_acl is not None:
+            self._web_acl("ALB", "REGIONAL", svc.alb_acl)
+
+    def _web_acl(self, title: str, kind: Scope, acl: wafv2.CfnWebACL) -> None:
+        # CloudFront web ACLs report in us-east-1, without a Region dimension.
+        region = EDGE_REGION if kind == "CLOUDFRONT" else None
+
+        def waf(metric: str, rule: str, label: str) -> cloudwatch.Metric:
+            dims = {"WebACL": str(acl.name), "Rule": rule}
+            if kind == "REGIONAL":
+                dims["Region"] = self.region
+            return cloudwatch.Metric(
+                namespace="AWS/WAFV2",
+                metric_name=metric,
+                dimensions_map=dims,
+                statistic="Sum",
+                label=label,
+                region=region,
+            )
+
+        self.add(
+            FIREWALL,
+            f"Firewall: AWS WAF on {title}",
+            [
+                self.graphs(
+                    [
+                        (
+                            "Requests allowed and blocked",
+                            [
+                                waf("AllowedRequests", "ALL", "allowed"),
+                                waf("BlockedRequests", "ALL", "blocked"),
+                            ],
+                        ),
+                        (
+                            "Blocked by rule",
+                            [
+                                waf("BlockedRequests", rule, rule)
+                                for rule in rule_names(self.d, kind)
+                            ],
+                        ),
+                    ],
+                    height=5,
+                )
+            ],
+            covers=[acl],
+        )
 
     def _login(self) -> None:
         """The Lambda@Edge login wall, seen from CloudFront and from its replicas.

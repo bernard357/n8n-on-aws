@@ -145,7 +145,7 @@ n8n must know its public URL: `N8N_HOST`, `N8N_PROTOCOL=https`, `N8N_EDITOR_BASE
 | Mode | How | Cost / complexity |
 |---|---|---|
 | `none` | n8n's built-in owner and users login only | — |
-| `ip-allowlist` | ALB SG or WAF IP set | trivial |
+| `ip-allowlist` | ALB: security group (every path). CloudFront: WAF IP sets that block other addresses except on the public paths | trivial; on CloudFront a web ACL ($5/month + rules) |
 | `alb-cognito` | ALB listener `authenticate-cognito` before forwarding editor paths | **No Lambda.** Recommended default when a login wall is wanted |
 | `alb-oidc` | ALB `authenticate-oidc` with any IdP (Entra ID, Okta, Google) | No Lambda |
 | `cloudfront-cognito` | CloudFront + Lambda@Edge (`cognito-at-edge` pattern), config baked at synth time, function stack in us-east-1 | Needed when CloudFront/WAF is used anyway, or for a global edge |
@@ -202,6 +202,24 @@ the cookie. `/webhook-test/*`, `/form-test/*` and `/mcp-test/*` stay protected, 
 - **Teardown:** AWS deletes Lambda@Edge replicas hours after the distribution stops using them,
   so the function is retained by `destroy`; `n8n-on-aws cleanup` deletes it later, with its log
   groups `/aws/lambda/us-east-1.<name>-edge-auth` in every region.
+
+### AWS WAF (ALB and CloudFront)
+
+One builder (`cdk/waf.py`) makes the web ACL for both scopes. A CloudFront web ACL must be in
+us-east-1: it goes in the `<name>-edge` stack, or in `<name>-n8n` when the deployment is in
+us-east-1. Rules, in priority order:
+
+1. `HideMetrics` when n8n serves `/metrics`: blocks paths starting with `/metrics` after
+   **lowercasing**, which closes the `/METRICS` gap of the case-sensitive ALB and CloudFront rules.
+2. `AllowList` (`auth.mode: ip-allowlist` on CloudFront): blocks requests whose source is not in
+   `ingress.allowed_cidrs` (one IP set per address family), except on `PUBLIC_PATHS` plus
+   `auth.public_paths`, so webhook callers keep working. On the ALB, the allow-list stays a security
+   group and covers every path.
+3. `RateLimit`, `AWSManagedRulesCommonRuleSet` (body size only counted, since webhooks carry large
+   bodies) and `AWSManagedRulesKnownBadInputsRuleSet` with `waf.kind: managed`.
+
+An existing web ACL is attached as is (`T6` checks that a CloudFront one has the `global` scope, and
+refuses `ip-allowlist` with it). The dashboard shows allowed and blocked requests, and blocks per rule.
 
 ### Network
 

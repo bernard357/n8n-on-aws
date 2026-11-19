@@ -27,10 +27,6 @@ def synthesis_findings(d: Deployment) -> list[Finding]:
         findings.append(_not_yet("runtime.platform", "EKS"))
     if d.runtime.platform == "ecs" and d.runtime.ecs.capacity == "ec2":
         findings.append(_not_yet("runtime.ecs.capacity", "ECS on EC2 capacity"))
-    if d.ingress.kind == "cloudfront" and d.ingress.cloudfront.waf.kind != "none":
-        findings.append(_not_yet("ingress.cloudfront.waf", "WAF on CloudFront"))
-    if d.ingress.kind == "cloudfront" and d.auth.mode == "ip-allowlist":
-        findings.append(_not_yet("auth.mode", "IP allow-list on CloudFront"))
     if d.backup.kind == "aws-backup" and d.backup.cross_region:
         findings.append(
             _degraded("backup.cross_region", "cross-region backup copies are ignored")

@@ -216,6 +216,23 @@ def auth_wrappers(d: Deployment) -> Iterator[Finding]:
             "ingress.allowed_cidrs",
             "ip-allowlist needs ingress.allowed_cidrs narrower than 0.0.0.0/0",
         )
+    edge_waf = d.ingress.cloudfront.waf
+    if d.ingress.kind == "cloudfront" and edge_waf.kind == "existing":
+        if ":global/" not in edge_waf.arn:
+            yield _error(
+                "T6",
+                "ingress.cloudfront.waf.arn",
+                "CloudFront only uses web ACLs of scope CLOUDFRONT "
+                "(arn:aws:wafv2:us-east-1:...:global/webacl/...)",
+            )
+        if mode == "ip-allowlist":
+            yield _error(
+                "T6",
+                "auth.mode",
+                "ip-allowlist adds rules to a web ACL we create; it cannot change "
+                "an existing one",
+                "use waf kind managed or none, or put the allow-list in your web ACL",
+            )
     certificate = d.ingress.certificate
     if (
         d.ingress.kind == "cloudfront"
@@ -726,6 +743,24 @@ def finops_edge_auth(d: Deployment) -> Iterator[Finding]:
             "the Lambda@Edge login wall runs on editor requests only: about $0.60 "
             "per million requests plus duration; Cognito is free up to 10,000 "
             "monthly active users",
+        )
+
+
+@rule
+def finops_waf(d: Deployment) -> Iterator[Finding]:
+    created = []
+    if d.ingress.kind == "cloudfront" and (
+        d.ingress.cloudfront.waf.kind == "managed" or d.auth.mode == "ip-allowlist"
+    ):
+        created.append("ingress.cloudfront.waf")
+    if d.has_alb and d.ingress.waf.kind == "managed":
+        created.append("ingress.waf")
+    for path in created:
+        yield _info(
+            "F8",
+            path,
+            "a web ACL costs $5/month plus $1/month per rule (up to 5 here) and "
+            "$0.60 per million requests",
         )
 
 

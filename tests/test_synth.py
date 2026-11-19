@@ -420,13 +420,6 @@ def test_nat_instance() -> None:
             "runtime.platform",
         ),
         ({"runtime": {"ecs": {"capacity": "ec2"}}}, "runtime.ecs.capacity"),
-        (
-            {
-                "auth": {"mode": "ip-allowlist"},
-                "ingress": {"allowed_cidrs": ["1.2.3.0/24"]},
-            },
-            "auth.mode",
-        ),
     ],
 )
 def test_deferred_features_are_reported(extra: dict[str, Any], path: str) -> None:
@@ -794,3 +787,98 @@ def test_cli_cleanup_has_nothing_to_do_without_edge_wall() -> None:
     out = io.StringIO()
     assert cli.main(["cleanup", "-f", str(FIXTURES / "minimal.yaml")], out) == 0
     assert "nothing outlives destroy" in out.getvalue()
+
+
+# ---------------------------------------------- WAF and allow-list on CloudFront (#7)
+
+EDGE_WAF = {
+    "aws": {"region": "eu-west-3"},
+    "ingress": {
+        "kind": "cloudfront",
+        **DOMAIN,
+        "cloudfront": {"waf": {"kind": "managed", "rate_limit": 500}},
+    },
+}
+
+
+def _rules(template: Template) -> dict[str, dict[str, Any]]:
+    acl = next(iter(template.find_resources("AWS::WAFv2::WebACL").values()))
+    return {r["Name"]: r for r in acl["Properties"]["Rules"]}
+
+
+def test_cloudfront_web_acl_lives_in_us_east_1_and_is_attached() -> None:
+    stacks = synth(EDGE_WAF)
+    stacks["edge"].has_resource_properties(
+        "AWS::WAFv2::WebACL", {"Scope": "CLOUDFRONT", "Name": "n8n-test-edge"}
+    )
+    assert list(_rules(stacks["edge"])) == [
+        "RateLimit",
+        "AWSManagedRulesCommonRuleSet",
+        "AWSManagedRulesKnownBadInputsRuleSet",
+    ]
+    distribution = next(
+        iter(stacks["n8n"].find_resources("AWS::CloudFront::Distribution").values())
+    )
+    assert "WebACLId" in distribution["Properties"]["DistributionConfig"]
+    stacks["n8n"].resource_count_is("AWS::WAFv2::WebACL", 0)
+
+
+def test_allow_list_blocks_editor_paths_and_keeps_public_paths_open() -> None:
+    stacks = synth(
+        {
+            "aws": {"region": "eu-west-3"},
+            "ingress": {
+                "kind": "cloudfront",
+                **DOMAIN,
+                "allowed_cidrs": ["198.51.100.0/24", "2001:db8::/32"],
+            },
+            "auth": {"mode": "ip-allowlist", "public_paths": ["/hooks/*"]},
+        }
+    )
+    edge = stacks["edge"]
+    sets = edge.find_resources("AWS::WAFv2::IPSet")
+    versions = {s["Properties"]["IPAddressVersion"] for s in sets.values()}
+    assert versions == {"IPV4", "IPV6"}
+    rules = _rules(edge)
+    assert list(rules) == ["AllowList"]
+    statement = rules["AllowList"]["Statement"]["AndStatement"]["Statements"]
+    addresses, public = statement
+    assert "OrStatement" in addresses["NotStatement"]["Statement"]
+    paths = {
+        s["ByteMatchStatement"]["SearchString"]: s["ByteMatchStatement"][
+            "PositionalConstraint"
+        ]
+        for s in public["NotStatement"]["Statement"]["OrStatement"]["Statements"]
+    }
+    assert paths["/webhook/"] == "STARTS_WITH"
+    assert paths["/healthz"] == "STARTS_WITH"
+    assert paths["/rest/binary-data/signed"] == "EXACTLY"
+    assert paths["/hooks/"] == "STARTS_WITH"
+    assert "/rest/" not in paths and "/webhook-test/" not in paths
+
+
+def test_web_acl_hides_metrics_whatever_the_case() -> None:
+    stacks = synth({**EDGE_WAF, "observability": {"prometheus": "cloudwatch"}})
+    rule = _rules(stacks["edge"])["HideMetrics"]
+    match = rule["Statement"]["ByteMatchStatement"]
+    assert match["SearchString"] == "/metrics"
+    assert match["TextTransformations"][0]["Type"] == "LOWERCASE"
+    assert "Block" in rule["Action"]
+
+
+def test_cloudfront_web_acl_in_us_east_1_stays_in_the_n8n_stack() -> None:
+    stacks = synth({**EDGE_WAF, "aws": {"region": "us-east-1"}})
+    assert "edge" not in stacks
+    stacks["n8n"].has_resource_properties("AWS::WAFv2::WebACL", {"Scope": "CLOUDFRONT"})
+
+
+def test_alb_web_acl_uses_the_same_rules() -> None:
+    t = sample("queue-workers")["n8n"]
+    if not t.find_resources("AWS::WAFv2::WebACL"):
+        t = synth(
+            {
+                "ingress": {"kind": "alb", **DOMAIN, "waf": {"kind": "managed"}},
+            }
+        )["n8n"]
+    t.has_resource_properties("AWS::WAFv2::WebACL", {"Scope": "REGIONAL"})
+    assert "RateLimit" in _rules(t)

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AWS WAF and the IP allow-list on CloudFront (#7):
+  - `ingress.cloudfront.waf: managed` creates a web ACL of scope CLOUDFRONT in us-east-1 with
+    a rate limit and two AWS managed rule groups; `existing` attaches a global web ACL
+  - `auth.mode: ip-allowlist` on CloudFront blocks other addresses except on the public paths
+  - every web ACL also blocks `/metrics` whatever its case, when n8n serves it
+  - one builder for the ALB and CloudFront web ACLs; dashboard "Firewall" section; web ACLs are
+    part of the coverage check
+  - rules `T6` (global scope for CloudFront; no allow-list on an existing web ACL), `F8` (cost)
+  - `split-webhooks` now synthesizes
 - Cognito login wall at CloudFront with Lambda@Edge, `auth.mode: cloudfront-cognito` (#6):
   - a viewer-request function in us-east-1 runs the code flow with PKCE on a public app client
     and checks the ID token on every editor request; no client secret exists
