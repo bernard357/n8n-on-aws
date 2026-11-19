@@ -746,35 +746,44 @@ def test_edge_wall_with_existing_cognito_reports_the_client_needs() -> None:
     assert "my-login.auth." in writers
 
 
-def test_cli_cleanup_deletes_the_edge_function_and_its_log_groups(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _fake_aws(stderr_on_delete: str = "") -> tuple[list[list[str]], Any]:
     calls: list[list[str]] = []
 
     def run(command: list[str], **_: Any) -> Any:
         calls.append(command)
-        stdout = "eu-west-3 us-east-1" if "describe-regions" in command else ""
+        stdout = ""
+        if "describe-regions" in command:
+            stdout = "eu-west-3 us-east-1 eu-central-1"
+        elif "describe-log-groups" in command:
+            prefix = command[command.index("--log-group-name-prefix") + 1]
+            stdout = f"{prefix}network-CustomVpcRestrictDefaultSG-abc"
+        if "delete-function" in command and stderr_on_delete:
+            return cli.subprocess.CompletedProcess(command, 254, "", stderr_on_delete)
         return cli.subprocess.CompletedProcess(command, 0, stdout, "")
 
+    return calls, run
+
+
+def test_cli_cleanup_deletes_the_edge_function_and_its_log_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, run = _fake_aws()
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/aws")
     monkeypatch.setattr(cli.subprocess, "run", run)
     out = io.StringIO()
     path = str(FIXTURES / "small-team.yaml")
     assert cli.main(["cleanup", "-f", path, "--yes"], out) == 0
-    assert calls[0][:3] == ["aws", "lambda", "delete-function"]
-    assert "n8n-team-edge-auth" in calls[0]
-    groups = [c[c.index("--log-group-name") + 1] for c in calls if "logs" in c]
-    assert groups.count("/aws/lambda/us-east-1.n8n-team-edge-auth") == 2
+    function = next(c for c in calls if "delete-function" in c)
+    assert "n8n-team-edge-auth" in function
+    groups = [
+        c[c.index("--log-group-name") + 1] for c in calls if "delete-log-group" in c
+    ]
+    assert groups.count("/aws/lambda/us-east-1.n8n-team-edge-auth") == 3
+    assert "/aws/lambda/n8n-team-network-CustomVpcRestrictDefaultSG-abc" in groups
 
 
 def test_cli_cleanup_waits_for_replicas(monkeypatch: pytest.MonkeyPatch) -> None:
-    def run(command: list[str], **_: Any) -> Any:
-        if "delete-function" in command:
-            return cli.subprocess.CompletedProcess(
-                command, 254, "", "Lambda was unable to delete ... replicated function"
-            )
-        return cli.subprocess.CompletedProcess(command, 0, "eu-west-3", "")
-
+    _, run = _fake_aws("Lambda was unable to delete ... replicated function")
     monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/aws")
     monkeypatch.setattr(cli.subprocess, "run", run)
     out = io.StringIO()
@@ -783,10 +792,34 @@ def test_cli_cleanup_waits_for_replicas(monkeypatch: pytest.MonkeyPatch) -> None
     assert "run cleanup again later" in out.getvalue()
 
 
-def test_cli_cleanup_has_nothing_to_do_without_edge_wall() -> None:
+def test_cli_cleanup_without_edge_wall_only_deletes_helper_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls, run = _fake_aws()
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/aws")
+    monkeypatch.setattr(cli.subprocess, "run", run)
     out = io.StringIO()
-    assert cli.main(["cleanup", "-f", str(FIXTURES / "minimal.yaml")], out) == 0
-    assert "nothing outlives destroy" in out.getvalue()
+    assert (
+        cli.main(["cleanup", "-f", str(FIXTURES / "minimal.yaml"), "--yes"], out) == 0
+    )
+    assert not any("delete-function" in c for c in calls)
+    assert "deleted log group /aws/lambda/n8n-minimal-network-" in out.getvalue()
+
+
+def test_edge_wall_parameter_is_owned_by_the_edge_stack() -> None:
+    stacks = synth(EDGE_WALL)
+    stacks["edge"].has_resource_properties(
+        "AWS::SSM::Parameter",
+        {"Name": "/n8n-on-aws/n8n-test/edge-auth", "Value": "{}"},
+    )
+    writers = stacks["n8n"].find_resources("Custom::AWS")
+    assert writers
+    assert all("Delete" not in w["Properties"] for w in writers.values())
+    own = synth({**EDGE_WALL, "aws": {"region": "us-east-1"}})["n8n"]
+    own.resource_count_is("Custom::AWS", 0)
+    own.has_resource_properties(
+        "AWS::SSM::Parameter", {"Name": "/n8n-on-aws/n8n-test/edge-auth"}
+    )
 
 
 # ---------------------------------------------- WAF and allow-list on CloudFront (#7)

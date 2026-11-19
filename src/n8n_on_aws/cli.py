@@ -224,16 +224,15 @@ def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
         print(
             "note: the encryption key secret is always retained (delete it yourself "
             "only if no backup needs it); the database snapshot, the bucket and EFS "
-            "are retained outside dev environments; CDK's own default-security-group "
-            "Lambda leaves a log group under /aws/lambda/<name>-network-",
+            "are retained outside dev environments; CDK's helper Lambdas leave log "
+            "groups under /aws/lambda/<name>-, which `n8n-on-aws cleanup` deletes",
             file=out,
         )
         if result.deployment.auth.mode == "cloudfront-cognito":
             print(
                 "note: the Lambda@Edge login wall is retained, because AWS deletes "
                 "its replicas hours after the distribution is gone; run "
-                f"`n8n-on-aws cleanup -f {args.file}` later to delete it and its "
-                "log groups in every region",
+                f"`n8n-on-aws cleanup -f {args.file}` a few hours later",
                 file=out,
             )
         if result.deployment.ingress.certificate.kind == "create":
@@ -261,36 +260,70 @@ def _aws(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def cmd_cleanup(args: argparse.Namespace, out: TextIO) -> int:
-    """Delete what outlives ``destroy``: the Lambda@Edge function and its logs."""
+    """Delete what outlives ``destroy``: Lambda log groups and the edge function.
+
+    CDK's helper functions (cross-region references, the default security group)
+    leave ``/aws/lambda/<name>-...`` log groups behind, and the Lambda@Edge login
+    wall is retained until AWS has removed its replicas.
+    """
     result = _load(args, out)
     if result is None or result.deployment is None:
         if result is not None:
             _summary(args.file, result, out)
         return EXIT_USAGE if result is None else EXIT_INVALID
+    from .cdk import environment
     from .cdk.edge import EDGE_REGION, edge_auth_function_name, needs_edge_auth
 
     d = result.deployment
-    if not needs_edge_auth(d):
-        print(f"{d.name}: nothing outlives destroy here", file=out)
-        return EXIT_OK
     if shutil.which("aws") is None:
         print("error: the AWS CLI is needed for cleanup", file=sys.stderr)
         return EXIT_USAGE
+    edge = needs_edge_auth(d)
     name = edge_auth_function_name(d)
     if not args.yes:
+        what = f"the Lambda@Edge function {name} (us-east-1) and its log groups, "
         print(
-            f"Delete the Lambda@Edge function {name} (us-east-1) and its log groups "
-            "in every region? [y/N] ",
+            f"Delete {what if edge else ''}and the /aws/lambda/{d.name}-* log groups "
+            "left by CDK helpers? [y/N] ",
             end="",
             file=out,
         )
         out.flush()
         if input().strip().lower() not in ("y", "yes"):
             return EXIT_OK
+    code = EXIT_OK
+    region = environment(d).region or EDGE_REGION
+    for where in dict.fromkeys([region, EDGE_REGION]):
+        listed = _aws(
+            "logs",
+            "describe-log-groups",
+            "--region",
+            where,
+            "--log-group-name-prefix",
+            f"/aws/lambda/{d.name}-",
+            "--query",
+            "logGroups[].logGroupName",
+            "--output",
+            "text",
+        )
+        for group in listed.stdout.split():
+            if (
+                _aws(
+                    "logs",
+                    "delete-log-group",
+                    "--region",
+                    where,
+                    "--log-group-name",
+                    group,
+                ).returncode
+                == 0
+            ):
+                print(f"deleted log group {group} in {where}", file=out)
+    if not edge:
+        return code
     deleted = _aws(
         "lambda", "delete-function", "--region", EDGE_REGION, "--function-name", name
     )
-    code = EXIT_OK
     if deleted.returncode == 0:
         print(f"deleted function {name}", file=out)
     elif "ResourceNotFoundException" in deleted.stderr:
@@ -318,19 +351,15 @@ def cmd_cleanup(args: argparse.Namespace, out: TextIO) -> int:
     if regions.returncode != 0:
         print(f"error: {regions.stderr.strip()}", file=sys.stderr)
         return EXIT_INVALID
-    groups = [f"/aws/lambda/{EDGE_REGION}.{name}", f"/aws/lambda/{name}"]
-    for region in regions.stdout.split():
-        for group in groups:
-            gone = _aws(
-                "logs",
-                "delete-log-group",
-                "--region",
-                region,
-                "--log-group-name",
-                group,
-            )
-            if gone.returncode == 0:
-                print(f"deleted log group {group} in {region}", file=out)
+    for where in regions.stdout.split():
+        group = f"/aws/lambda/{EDGE_REGION}.{name}"
+        if (
+            _aws(
+                "logs", "delete-log-group", "--region", where, "--log-group-name", group
+            ).returncode
+            == 0
+        ):
+            print(f"deleted log group {group} in {where}", file=out)
     return code
 
 
@@ -398,7 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_destroy)
 
     p = sub.add_parser(
-        "cleanup", help="delete what outlives destroy (the Lambda@Edge login wall)"
+        "cleanup", help="delete what outlives destroy (CDK log groups, edge function)"
     )
     with_file(p)
     p.add_argument("--yes", action="store_true", help="do not ask for confirmation")

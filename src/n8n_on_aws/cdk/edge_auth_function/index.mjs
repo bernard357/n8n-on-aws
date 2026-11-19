@@ -25,7 +25,9 @@ async function load() {
   if (settings === null) {
     const ssm = new SSMClient({ region: config.parameterRegion });
     const out = await ssm.send(new GetParameterCommand({ Name: config.parameter }));
-    settings = JSON.parse(out.Parameter.Value);
+    const value = JSON.parse(out.Parameter.Value);
+    if (!value.userPoolId || !value.clientId) throw new Error("not filled in yet");
+    settings = value;
   }
   if (keys === null) {
     const url = `${issuer()}/.well-known/jwks.json`;

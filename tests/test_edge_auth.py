@@ -42,6 +42,9 @@ state.fail = true;
 assert.equal((await handler(event)).status, "503");
 assert.equal((await handler(event)).status, "503");
 assert.equal(state.reads, 2);  // a failure is not cached
+state.fail = false;
+state.value = "{}";  // the placeholder the us-east-1 stack writes first
+assert.equal((await handler(event)).status, "503");
 console.log("edge auth: unconfigured checks passed");
 """
 

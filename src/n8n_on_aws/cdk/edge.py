@@ -14,6 +14,7 @@ from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_route53 as route53
+from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_wafv2 as wafv2
 from constructs import Construct
 
@@ -150,6 +151,16 @@ class EdgeStack(cdk.Stack):
         super().__init__(scope, construct_id, **kwargs)
         self.certificate = None
         self.auth_function = edge_auth_function(self, d) if needs_edge_auth(d) else None
+        if self.auth_function is not None:
+            # Filled in by the n8n stack once the user pool exists; owned here, so it
+            # is deleted with this stack and nothing writes to it at delete time.
+            ssm.StringParameter(
+                self,
+                "EdgeAuthConfig",
+                parameter_name=edge_auth_parameter(d),
+                string_value="{}",
+                description=f"user pool and client of the n8n {d.name} login wall",
+            )
         self.web_acl = web_acl(self, d, "CLOUDFRONT") if needs_edge_waf(d) else None
         if needs_edge_certificate(d):
             assert d.ingress.domain is not None

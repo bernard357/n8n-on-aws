@@ -26,6 +26,7 @@ from aws_cdk import aws_route53 as route53
 from aws_cdk import aws_route53_targets as route53_targets
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_secretsmanager as secretsmanager
+from aws_cdk import aws_ssm as ssm
 from aws_cdk import aws_wafv2 as wafv2
 from aws_cdk import custom_resources as cr
 from constructs import Construct
@@ -387,7 +388,14 @@ class ServiceStack(cdk.Stack):
                 "region": self.region,
             }
         )
+        if self.edge is None:  # this stack is in us-east-1 with the function
+            ssm.StringParameter(
+                self, "EdgeAuthConfig", parameter_name=name, string_value=value
+            )
+            return
 
+        # The parameter belongs to the us-east-1 stack, deleted after this one; the
+        # writer only fills it in, so nothing runs (and logs) at delete time.
         def put() -> cr.AwsSdkCall:
             return cr.AwsSdkCall(
                 service="SSM",
@@ -408,17 +416,10 @@ class ServiceStack(cdk.Stack):
             "EdgeAuthConfig",
             on_create=put(),
             on_update=put(),
-            on_delete=cr.AwsSdkCall(
-                service="SSM",
-                action="deleteParameter",
-                region=EDGE_REGION,
-                parameters={"Name": name},
-                ignore_error_codes_matching="ParameterNotFound",
-            ),
             policy=cr.AwsCustomResourcePolicy.from_statements(
                 [
                     iam.PolicyStatement(
-                        actions=["ssm:PutParameter", "ssm:DeleteParameter"],
+                        actions=["ssm:PutParameter"],
                         resources=[
                             f"arn:{self.partition}:ssm:{EDGE_REGION}:{self.account}"
                             f":parameter{name}"
@@ -429,7 +430,6 @@ class ServiceStack(cdk.Stack):
             install_latest_aws_sdk=False,
             log_group=log_group,
         )
-        # Delete the writer before its log group: its last run would recreate it.
         writer.node.add_dependency(log_group)
 
     def _serves_metrics(self) -> bool:

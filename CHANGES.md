@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Teardown fixes from the smoke test of #4–#6:
+  - the edge login wall's SSM parameter belongs to the us-east-1 stack; the n8n stack only fills
+    it in, so no custom resource runs and recreates its log group during `destroy`
+  - `n8n-on-aws cleanup` works for every deployment: it deletes the `/aws/lambda/<name>-*` log
+    groups that CDK's helper functions leave, then the retained Lambda@Edge function and its
+    log groups in every region
 - AWS WAF and the IP allow-list on CloudFront (#7):
   - `ingress.cloudfront.waf: managed` creates a web ACL of scope CLOUDFRONT in us-east-1 with
     a rate limit and two AWS managed rule groups; `existing` attaches a global web ACL
