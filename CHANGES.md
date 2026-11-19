@@ -7,7 +7,10 @@
     and checks the ID token on every editor request; no client secret exists
   - public paths have CloudFront behaviors without the function
   - the pool and client IDs reach the function through an SSM parameter in us-east-1
-  - dashboard section "Login wall" and an alarm on function errors near the region
+  - dashboard section "Login wall": Lambda@Edge errors seen by CloudFront, and invocations,
+    errors and duration in the regional edge cache regions of the deployment's continent, where
+    Lambda@Edge reports (a Paris user is served from eu-central-1 and eu-west-2, not eu-west-3).
+    No alarm: CloudWatch alarms cannot read another region.
   - `n8n-on-aws cleanup` deletes the retained function and its log groups in every region, once
     AWS has removed the replicas
   - rules: `T7` (a domain is needed; at most 10 extra public paths), `F7` (cost)

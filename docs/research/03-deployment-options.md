@@ -57,7 +57,10 @@ instance pauses only when no user connection is open. n8n pings the database eve
 (`DB_PING_INTERVAL_SECONDS`) and closes idle pool connections only after 30 seconds
 (`DB_POSTGRESDB_IDLE_CONNECTION_TIMEOUT`), so **Aurora never pauses while any n8n task runs**.
 Scale-to-zero pays off only when an office-hours schedule stops every n8n service. The `F3` finding
-says so. The cold start when the services come back is still to be measured on a real account (#4).
+says so. **Measured on 2026-11-19** (eu-west-3, n8n 2.48.6, `min_acu: 0`): capacity stayed at
+0.5 ACU for 45 minutes of n8n uptime; once every n8n task was stopped, Aurora paused about 5 minutes
+later. Starting main again, n8n reached its editor 20 seconds after its process started, against 5
+seconds with a running database: resuming Aurora adds about 15 seconds.
 Size pool usage too: `DB_POSTGRESDB_POOL_SIZE` (default 2) × tasks × roles < `max_connections`.
 
 Aurora DSQL is **excluded**: it is not compatible enough with PostgreSQL for n8n's TypeORM migrations
@@ -93,6 +96,11 @@ when every worker is at its concurrency, so one waiting job already means "more 
 - `/metrics` has no authentication in n8n, so it answers **404 at the ALB** (listener rule) and **at
   CloudFront** (a CloudFront Function on `/metrics*`). Path matching is case-sensitive there, while
   n8n's router is not: behind `auth.mode: none`, `/METRICS` still reaches n8n. A login wall covers it.
+- **Measured on 2026-11-19** (concurrency 5, `target: 5`, `scale_in_minutes: 3`, `min: 0`, `max: 3`):
+  180 webhook calls, each job waiting 30 seconds. Jobs waited from 14:42; the scale-out alarm fired
+  at 14:43:33 and set 3 workers, running by 14:45:39; 15 jobs ran at a time (3 × 5); all 181 jobs
+  completed, none failed. After the queue emptied at 14:53, workers went 3 → 2 → 1 → 0 at 14:57,
+  15:01 and 15:05.
 - `observability.prometheus: cloudwatch` adds five process metrics (active workflows, event loop lag
   p99, heap, resident memory, leader). Each published metric costs about $0.30 a month (`F6`).
 
@@ -183,6 +191,14 @@ the cookie. `/webhook-test/*`, `/form-test/*` and `/mcp-test/*` stay protected, 
 - **Session:** the ID token lives `min(session_hours, 24)` hours (Cognito's maximum). When it
   expires, a page load goes back through Cognito (silent while the Cognito session lasts) and an
   API call gets 401, so the editor asks to reload. There is no refresh token.
+- **Where it reports:** Lambda@Edge writes metrics and logs in the region of the regional edge cache
+  that served the request, as `us-east-1.<name>-edge-auth`. Users near Paris were served from
+  eu-central-1 and eu-west-2, not eu-west-3. The dashboard graphs the cache regions of the
+  deployment's continent; there is no alarm, because CloudWatch alarms cannot read another region.
+  CloudFront's own `LambdaExecutionError` metrics only exist once an error has happened.
+- **Measured on 2026-11-19:** editor pages redirect to the Cognito hosted UI with PKCE, API calls get
+  401, the public paths reach n8n, `/metrics` answers 404, and Cognito accepts the request.
+  Signing in was not tested (no user was created).
 - **Teardown:** AWS deletes Lambda@Edge replicas hours after the distribution stops using them,
   so the function is retained by `destroy`; `n8n-on-aws cleanup` deletes it later, with its log
   groups `/aws/lambda/us-east-1.<name>-edge-auth` in every region.

@@ -454,7 +454,13 @@ class DashboardBuilder:
             )
 
     def _login(self) -> None:
-        """The Lambda@Edge login wall: errors seen by CloudFront, runs near here."""
+        """The Lambda@Edge login wall, seen from CloudFront and from its replicas.
+
+        Lambda@Edge reports in the region of the regional edge cache that served each
+        request, as ``us-east-1.<name>``, and rarely in the deployment's own region.
+        The graphs read the cache regions of the deployment's continent. No alarm is
+        created: a CloudWatch alarm cannot read metrics of another region.
+        """
         svc = self.service
         function = svc.auth_function or (
             svc.edge.auth_function if svc.edge is not None else None
@@ -462,8 +468,8 @@ class DashboardBuilder:
         distribution = svc.distribution
         if function is None or distribution is None:
             return
-        # Lambda@Edge reports in the region of each edge location, as us-east-1.<name>.
         replica = f"us-east-1.{edge_auth_function_name(self.d)}"
+        regions = edge_cache_regions(self.region)
 
         def edge(name: str, label: str) -> cloudwatch.Metric:
             return cloudwatch.Metric(
@@ -478,14 +484,18 @@ class DashboardBuilder:
                 region=EDGE_REGION,
             )
 
-        def nearby(name: str, label: str, statistic: str = "Sum") -> cloudwatch.Metric:
-            return cloudwatch.Metric(
-                namespace="AWS/Lambda",
-                metric_name=name,
-                dimensions_map={"FunctionName": replica},
-                statistic=statistic,
-                label=label,
-            )
+        def replicas(name: str, statistic: str = "Sum") -> list[cloudwatch.IMetric]:
+            return [
+                cloudwatch.Metric(
+                    namespace="AWS/Lambda",
+                    metric_name=name,
+                    dimensions_map={"FunctionName": replica},
+                    statistic=statistic,
+                    label=region,
+                    region=region,
+                )
+                for region in regions
+            ]
 
         self.add(
             LOGIN,
@@ -494,46 +504,31 @@ class DashboardBuilder:
                 [
                     _text(
                         f"Lambda@Edge `{replica}` runs on editor requests only; "
-                        "webhook, form and MCP paths bypass it. Its logs are in "
-                        "`/aws/lambda/" + replica + "` of the region nearest to "
-                        "each user.",
+                        "webhook, form and MCP paths bypass it. It reports in the "
+                        f"region of each regional edge cache ({', '.join(regions)} "
+                        f"near {self.region}), with logs in `/aws/lambda/{replica}` "
+                        "there.",
                         height=1,
                     )
                 ],
                 self.graphs(
                     [
                         (
-                            "Function errors seen by CloudFront",
+                            "Function errors seen by CloudFront (from the first one)",
                             [
                                 edge("LambdaExecutionError", "execution"),
                                 edge("LambdaValidationError", "validation"),
                                 edge("LambdaLimitExceededError", "limit exceeded"),
                             ],
                         ),
-                        (
-                            f"Runs near {self.region}",
-                            [
-                                nearby("Invocations", "invocations"),
-                                nearby("Errors", "errors"),
-                            ],
-                        ),
-                        (
-                            f"Duration near {self.region} (ms)",
-                            [nearby("Duration", "p90", "p90")],
-                        ),
+                        ("Invocations per region", replicas("Invocations")),
+                        ("Errors per region", replicas("Errors")),
+                        ("Duration p90 per region (ms)", replicas("Duration", "p90")),
                     ],
                     height=5,
                 ),
             ],
             covers=[function],
-        )
-        self.alarm(
-            "LoginWallErrors",
-            nearby("Errors", "errors"),
-            0,
-            "the Lambda@Edge login wall fails for users near this region: "
-            "the editor may be unreachable",
-            evaluation_periods=1,
         )
 
     def _jobs(self) -> None:
@@ -776,10 +771,12 @@ class DashboardBuilder:
     def _logs(self) -> None:
         svc = self.service
         group = svc.logs
-        # Migration names such as RemoveFailedExecutionStatus are not errors.
+        # Migration names such as RemoveFailedExecutionStatus are not errors, and the
+        # metrics agent prints its own config (and "error=<nil>") when it starts.
         errors = (
             r"filter @message like /(?i)(error|exception|failed)/"
             r" and @message not like /migration/"
+            r" and @logStream not like /^metrics-agent\//"
         )
         self.add(
             LOGS,
@@ -1276,6 +1273,27 @@ class DashboardBuilder:
                 "costmanagement/home#/anomaly-detection/overview)"
             )
         self.add(COST, "Cost", [[_text(" · ".join(parts), height=1)]])
+
+
+# Regions that host CloudFront's regional edge caches, by continent.
+_EDGE_CACHES = {
+    "eu": ("eu-central-1", "eu-west-1", "eu-west-2"),
+    "us": ("us-east-1", "us-east-2", "us-west-1", "us-west-2"),
+    "ca": ("us-east-1", "us-east-2", "us-west-2"),
+    "sa": ("sa-east-1", "us-east-1"),
+    "ap": (
+        "ap-northeast-1",
+        "ap-northeast-2",
+        "ap-south-1",
+        "ap-southeast-1",
+        "ap-southeast-2",
+    ),
+}
+
+
+def edge_cache_regions(region: str) -> tuple[str, ...]:
+    """The regions where Lambda@Edge most likely reports for users near ``region``."""
+    return _EDGE_CACHES.get(region.split("-")[0], ("eu-central-1", "ap-south-1"))
 
 
 def _kebab(name: str) -> str:

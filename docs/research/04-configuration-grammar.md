@@ -107,7 +107,7 @@ runtime:
     capacity: fargate | fargate-spot | ec2 = fargate
     architecture: arm64 | x86_64 = arm64
     ec2: {instance_type: str = m7g.large, min: int = 1, max: int = 4}   # capacity=ec2
-    exec: bool = false                         # ECS Exec for debugging
+    exec: bool = false                         # ECS Exec; turning it on later needs new tasks
   eks:
     cluster:
       kind: create | existing = create

@@ -306,3 +306,36 @@ def test_process_section_only_with_prometheus() -> None:
     _, builder = custom({"observability": {"prometheus": "cloudwatch"}})
     assert "n8n process (main)" in builder.titles
     assert "Queue jobs" not in builder.titles
+
+
+# ------------------------------------------------------- login wall (#6)
+
+
+def test_login_wall_reads_the_regional_edge_caches() -> None:
+    from n8n_on_aws.cdk.dashboard import edge_cache_regions
+
+    assert edge_cache_regions("eu-west-3") == ("eu-central-1", "eu-west-1", "eu-west-2")
+    assert "us-east-1" in edge_cache_regions("us-west-2")
+    app, builder = custom(
+        {
+            "aws": {"region": "eu-west-3"},
+            "ingress": {
+                "kind": "cloudfront",
+                "domain": "n8n.example.com",
+                "hosted_zone": {
+                    "kind": "existing",
+                    "id": "Z0123456789ABC",
+                    "name": "example.com",
+                },
+                "certificate": {"kind": "create"},
+            },
+            "auth": {"mode": "cloudfront-cognito"},
+        }
+    )
+    assert "Login wall: Cognito at the edge" in builder.titles
+    text = body(app, builder)
+    assert "us-east-1.n8n-test-edge-auth" in text
+    assert '\\"region\\":\\"eu-central-1\\"' in text or "eu-central-1" in text
+    names = {a["Properties"]["AlarmName"] for a in _alarms(app, builder).values()}
+    assert not any("login" in name for name in names)
+    assert unmonitored(app, builder) == []
