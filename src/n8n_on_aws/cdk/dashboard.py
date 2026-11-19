@@ -30,7 +30,7 @@ from constructs import IConstruct
 from ..config.models import Deployment
 from ..plan import Plan
 from . import metrics as n8n_metrics
-from .edge import EDGE_REGION
+from .edge import EDGE_REGION, edge_auth_function_name
 
 if TYPE_CHECKING:
     from .data import DataStack
@@ -64,19 +64,12 @@ FRAMEWORK_MARKERS = (
     "Custom::S3AutoDeleteObjectsCustomResourceProvider",
     "/framework-onEvent",  # custom resource Provider framework
     "LogRetention",
+    "Custom::CrossRegionExport",  # cross-region references (writer and reader)
 )
 
 # Section order on the dashboard.
-HEADER, HEALTH, INGRESS, JOBS, ROLES, PROCESS, RUNNERS, LOGS = (
-    0,
-    10,
-    20,
-    25,
-    30,
-    33,
-    35,
-    40,
-)
+HEADER, HEALTH, INGRESS, LOGIN, JOBS, ROLES, PROCESS = 0, 10, 20, 22, 25, 30, 33
+RUNNERS, LOGS = 35, 40
 DATABASE, QUEUE, FILES, STORAGE, NETWORK, GLUE, COST = 50, 60, 70, 80, 90, 100, 110
 
 _NOT_MONITORED = "is outside this deployment and is not monitored here."
@@ -208,6 +201,7 @@ class DashboardBuilder:
         self._files()
         self._storage()
         self._ingress()
+        self._login()
         self._jobs()
         self._roles()
         self._process()
@@ -458,6 +452,89 @@ class DashboardBuilder:
                 0,
                 f"an n8n {name} target has been unhealthy for 15 minutes",
             )
+
+    def _login(self) -> None:
+        """The Lambda@Edge login wall: errors seen by CloudFront, runs near here."""
+        svc = self.service
+        function = svc.auth_function or (
+            svc.edge.auth_function if svc.edge is not None else None
+        )
+        distribution = svc.distribution
+        if function is None or distribution is None:
+            return
+        # Lambda@Edge reports in the region of each edge location, as us-east-1.<name>.
+        replica = f"us-east-1.{edge_auth_function_name(self.d)}"
+
+        def edge(name: str, label: str) -> cloudwatch.Metric:
+            return cloudwatch.Metric(
+                namespace="AWS/CloudFront",
+                metric_name=name,
+                dimensions_map={
+                    "DistributionId": distribution.distribution_id,
+                    "Region": "Global",
+                },
+                statistic="Sum",
+                label=label,
+                region=EDGE_REGION,
+            )
+
+        def nearby(name: str, label: str, statistic: str = "Sum") -> cloudwatch.Metric:
+            return cloudwatch.Metric(
+                namespace="AWS/Lambda",
+                metric_name=name,
+                dimensions_map={"FunctionName": replica},
+                statistic=statistic,
+                label=label,
+            )
+
+        self.add(
+            LOGIN,
+            "Login wall: Cognito at the edge",
+            [
+                [
+                    _text(
+                        f"Lambda@Edge `{replica}` runs on editor requests only; "
+                        "webhook, form and MCP paths bypass it. Its logs are in "
+                        "`/aws/lambda/" + replica + "` of the region nearest to "
+                        "each user.",
+                        height=1,
+                    )
+                ],
+                self.graphs(
+                    [
+                        (
+                            "Function errors seen by CloudFront",
+                            [
+                                edge("LambdaExecutionError", "execution"),
+                                edge("LambdaValidationError", "validation"),
+                                edge("LambdaLimitExceededError", "limit exceeded"),
+                            ],
+                        ),
+                        (
+                            f"Runs near {self.region}",
+                            [
+                                nearby("Invocations", "invocations"),
+                                nearby("Errors", "errors"),
+                            ],
+                        ),
+                        (
+                            f"Duration near {self.region} (ms)",
+                            [nearby("Duration", "p90", "p90")],
+                        ),
+                    ],
+                    height=5,
+                ),
+            ],
+            covers=[function],
+        )
+        self.alarm(
+            "LoginWallErrors",
+            nearby("Errors", "errors"),
+            0,
+            "the Lambda@Edge login wall fails for users near this region: "
+            "the editor may be unreachable",
+            evaluation_periods=1,
+        )
 
     def _jobs(self) -> None:
         """Jobs in the queue, from n8n's own metrics, next to the worker count."""

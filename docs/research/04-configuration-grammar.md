@@ -159,10 +159,10 @@ auth:
     invite: [email] = []                      # initial users
     federation: {kind: none} | {kind: oidc, issuer: str, client_id: str, client_secret: {secret: str}}
                 | {kind: saml, metadata_url: str}
-    # existing
+    # existing (cloudfront-cognito: a client without secret, callback /_auth/callback)
     user_pool_id: str
     client_id: str
-    domain: str
+    domain: str                               # prefix, or the full hosted UI domain
   oidc:                                       # alb-oidc
     issuer: str
     authorization_endpoint: str
@@ -329,5 +329,5 @@ The JSON Schema is exported from the models (`n8n-on-aws schema > schema/v1.json
 | `workers.scale_on: queue-depth` | CloudWatch agent sidecar on main scrapes n8n's queue gauges into the `n8n-on-aws` namespace; step scaling out on waiting jobs (from zero workers), in when the jobs in flight fit on one worker less, plus a CPU policy that never scales in | KEDA `redis` scaler |
 | `database`, `queue`, `storage.bucket` | shared `<name>-data` stack | same |
 | `auth.alb-*` | ALB listener rules: bypass list → forward; default → authenticate then forward | ALB Ingress annotations (`alb.ingress.kubernetes.io/auth-*`) |
-| `auth.cloudfront-cognito` | `<name>-edge` stack in us-east-1 + cross-region SSM parameter | same |
+| `auth.cloudfront-cognito` | Lambda@Edge viewer-request function in the `<name>-edge` stack (us-east-1); Cognito pool and public client in `<name>-n8n`, which writes their IDs to an SSM parameter in us-east-1; one CloudFront behavior without the function per public path | same |
 | secrets | ECS `secrets:` from Secrets Manager | External Secrets Operator or Secrets Store CSI, via Pod Identity |

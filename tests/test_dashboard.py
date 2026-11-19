@@ -34,9 +34,6 @@ SAMPLES = [
 
 def _sample_data(name: str) -> dict[str, Any]:
     data: dict[str, Any] = yaml.safe_load((FIXTURES / f"{name}.yaml").read_text())
-    auth = data.setdefault("auth", {})
-    if auth.get("mode") == "cloudfront-cognito":
-        auth["mode"] = "none"
     cloudfront = data.get("ingress", {}).get("cloudfront", {})
     if "waf" in cloudfront:
         cloudfront["waf"] = {"kind": "none"}

@@ -420,7 +420,13 @@ def test_nat_instance() -> None:
             "runtime.platform",
         ),
         ({"runtime": {"ecs": {"capacity": "ec2"}}}, "runtime.ecs.capacity"),
-        ({"auth": {"mode": "cloudfront-cognito"}}, "auth.mode"),
+        (
+            {
+                "auth": {"mode": "ip-allowlist"},
+                "ingress": {"allowed_cidrs": ["1.2.3.0/24"]},
+            },
+            "auth.mode",
+        ),
     ],
 )
 def test_deferred_features_are_reported(extra: dict[str, Any], path: str) -> None:
@@ -456,7 +462,8 @@ def test_cli_dry_run_writes_templates(tmp_path: Any) -> None:
 
 def test_cli_dry_run_refuses_deferred_features() -> None:
     out = io.StringIO()
-    code = cli.main(["deploy", "-f", str(FIXTURES / "nano.yaml"), "--dry-run"], out)
+    path = str(FIXTURES / "eks-new-cluster.yaml")
+    code = cli.main(["deploy", "-f", path, "--dry-run"], out)
     assert code == 1
     assert "not synthesized yet" in out.getvalue()
 
@@ -650,3 +657,140 @@ def test_queue_depth_scaling_is_no_longer_degraded() -> None:
     paths = {f.path for f in synthesis_findings(result.deployment)}
     assert "topology.workers.scale_on" not in paths
     assert "observability.prometheus" not in paths
+
+
+# ------------------------------------------------- Cognito at the edge (#6)
+
+EDGE_WALL = {
+    "aws": {"region": "eu-west-3"},
+    "ingress": {"kind": "cloudfront", **DOMAIN},
+    "auth": {"mode": "cloudfront-cognito"},
+}
+
+
+def test_edge_wall_function_lives_in_us_east_1_and_is_retained() -> None:
+    stacks = synth(EDGE_WALL)
+    edge = stacks["edge"]
+    functions = edge.find_resources("AWS::Lambda::Function")
+    wall = next(f for f in functions.values() if f["Properties"].get("FunctionName"))
+    assert wall["Properties"]["FunctionName"] == "n8n-test-edge-auth"
+    assert wall["Properties"]["Runtime"] == "nodejs22.x"
+    assert wall["Properties"]["MemorySize"] == 128
+    assert wall["Properties"]["Timeout"] == 5
+    assert wall["DeletionPolicy"] == "Retain"
+    assert "Environment" not in wall["Properties"]
+    roles = json.dumps(edge.find_resources("AWS::IAM::Role"))
+    assert "edgelambda.amazonaws.com" in roles
+
+
+def test_edge_wall_guards_the_editor_and_leaves_public_paths_open() -> None:
+    t = synth(EDGE_WALL)["n8n"]
+    config = next(iter(t.find_resources("AWS::CloudFront::Distribution").values()))[
+        "Properties"
+    ]["DistributionConfig"]
+    default = config["DefaultCacheBehavior"]
+    associations = default["LambdaFunctionAssociations"]
+    assert [a["EventType"] for a in associations] == ["viewer-request"]
+    behaviors = {b["PathPattern"]: b for b in config["CacheBehaviors"]}
+    for path in ("/webhook/*", "/form/*", "/mcp/*", "/healthz*", "/mcp-server/*"):
+        assert path in behaviors, path
+        assert "LambdaFunctionAssociations" not in behaviors[path], path
+    assert "/webhook-test/*" not in behaviors
+    assert "/rest/*" not in behaviors
+
+
+def test_edge_wall_uses_a_public_cognito_client_and_writes_its_config() -> None:
+    t = synth(EDGE_WALL)["n8n"]
+    t.has_resource_properties(
+        "AWS::Cognito::UserPoolClient",
+        {
+            "GenerateSecret": False,
+            "CallbackURLs": ["https://n8n.example.com/_auth/callback"],
+            "LogoutURLs": ["https://n8n.example.com/"],
+            "AllowedOAuthFlows": ["code"],
+        },
+    )
+    writers = t.find_resources("Custom::AWS")
+    create = json.dumps(
+        [w["Properties"].get("Create") for w in writers.values()], default=str
+    )
+    assert "putParameter" in create and "/n8n-on-aws/n8n-test/edge-auth" in create
+    assert "us-east-1" in create
+
+
+def test_edge_wall_in_us_east_1_keeps_the_function_in_the_n8n_stack() -> None:
+    stacks = synth({**EDGE_WALL, "aws": {"region": "us-east-1"}})
+    assert "edge" not in stacks
+    stacks["n8n"].has_resource_properties(
+        "AWS::Lambda::Function", {"FunctionName": "n8n-test-edge-auth"}
+    )
+
+
+def test_edge_wall_with_existing_cognito_reports_the_client_needs() -> None:
+    result = check(
+        {
+            **EDGE_WALL,
+            "auth": {
+                "mode": "cloudfront-cognito",
+                "cognito": {
+                    "kind": "existing",
+                    "user_pool_id": "eu-west-3_AbCdEf",
+                    "client_id": "abc123",
+                    "domain": "my-login",
+                },
+            },
+        }
+    )
+    assert result.ok and result.deployment is not None, result.findings
+    messages = [f.message for f in synthesis_findings(result.deployment)]
+    assert any("/_auth/callback" in m for m in messages)
+    t = templates(_app(result.deployment))["n8n"]
+    t.resource_count_is("AWS::Cognito::UserPool", 0)
+    writers = json.dumps(
+        [w["Properties"] for w in t.find_resources("Custom::AWS").values()],
+        default=str,
+    )
+    assert "my-login.auth." in writers
+
+
+def test_cli_cleanup_deletes_the_edge_function_and_its_log_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **_: Any) -> Any:
+        calls.append(command)
+        stdout = "eu-west-3 us-east-1" if "describe-regions" in command else ""
+        return cli.subprocess.CompletedProcess(command, 0, stdout, "")
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/aws")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    out = io.StringIO()
+    path = str(FIXTURES / "small-team.yaml")
+    assert cli.main(["cleanup", "-f", path, "--yes"], out) == 0
+    assert calls[0][:3] == ["aws", "lambda", "delete-function"]
+    assert "n8n-team-edge-auth" in calls[0]
+    groups = [c[c.index("--log-group-name") + 1] for c in calls if "logs" in c]
+    assert groups.count("/aws/lambda/us-east-1.n8n-team-edge-auth") == 2
+
+
+def test_cli_cleanup_waits_for_replicas(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(command: list[str], **_: Any) -> Any:
+        if "delete-function" in command:
+            return cli.subprocess.CompletedProcess(
+                command, 254, "", "Lambda was unable to delete ... replicated function"
+            )
+        return cli.subprocess.CompletedProcess(command, 0, "eu-west-3", "")
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _: "/usr/bin/aws")
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    out = io.StringIO()
+    path = str(FIXTURES / "small-team.yaml")
+    assert cli.main(["cleanup", "-f", path, "--yes"], out) == 1
+    assert "run cleanup again later" in out.getvalue()
+
+
+def test_cli_cleanup_has_nothing_to_do_without_edge_wall() -> None:
+    out = io.StringIO()
+    assert cli.main(["cleanup", "-f", str(FIXTURES / "minimal.yaml")], out) == 0
+    assert "nothing outlives destroy" in out.getvalue()

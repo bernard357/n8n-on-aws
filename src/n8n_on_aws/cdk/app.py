@@ -15,7 +15,13 @@ from ..config.rules import Finding
 from ..plan import build_plan
 from .dashboard import DashboardBuilder
 from .data import DataStack
-from .edge import EDGE_REGION, EdgeStack, needs_anomaly_monitor, needs_edge_certificate
+from .edge import (
+    EDGE_REGION,
+    EdgeStack,
+    needs_anomaly_monitor,
+    needs_edge_auth,
+    needs_edge_certificate,
+)
 from .network import NetworkStack
 from .service import ServiceStack
 from .support import synthesis_findings
@@ -56,7 +62,7 @@ def bootstrap_regions(d: Deployment) -> list[str]:
     assert region is not None
     regions = [region]
     if region != EDGE_REGION and (
-        needs_edge_certificate(d) or needs_anomaly_monitor(d)
+        needs_edge_certificate(d) or needs_anomaly_monitor(d) or needs_edge_auth(d)
     ):
         regions.append(EDGE_REGION)
     return regions
@@ -78,7 +84,9 @@ def build_app(
     description = "n8n-on-aws: {} of " + d.name
 
     edge: EdgeStack | None = None
-    if cross_region and (needs_edge_certificate(d) or needs_anomaly_monitor(d)):
+    if cross_region and (
+        needs_edge_certificate(d) or needs_anomaly_monitor(d) or needs_edge_auth(d)
+    ):
         edge = EdgeStack(
             app,
             f"{d.name}-edge",

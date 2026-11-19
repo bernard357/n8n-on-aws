@@ -397,3 +397,16 @@ def test_f6_metrics_cost() -> None:
     result = check({"topology": queued, "queue": {"kind": "elasticache-serverless"}})
     assert "F6" in codes(result, "info")
     assert "F6" not in codes(check(), "info")
+
+
+def test_t7_edge_login_wall_needs_a_domain_and_few_paths() -> None:
+    result = check({"auth": {"mode": "cloudfront-cognito"}})
+    assert "ingress.domain" in {f.path for f in result.findings if f.code == "T7"}
+    many = [f"/extra-{i}/*" for i in range(11)]
+    result = check({"auth": {"mode": "cloudfront-cognito", "public_paths": many}})
+    assert "auth.public_paths" in {f.path for f in result.findings if f.code == "T7"}
+
+
+def test_f7_edge_login_wall_cost() -> None:
+    assert "F7" in codes(check({"auth": {"mode": "cloudfront-cognito"}}), "info")
+    assert "F7" not in codes(check(), "info")

@@ -38,7 +38,15 @@ from ..plan import PUBLIC_PATHS, Plan, Role
 from . import metrics as n8n_metrics
 from . import origin_updater
 from .data import DataStack
-from .edge import EdgeStack, hosted_zone
+from .edge import (
+    EDGE_AUTH_CALLBACK,
+    EDGE_REGION,
+    EdgeStack,
+    edge_auth_function,
+    edge_auth_parameter,
+    hosted_zone,
+    needs_edge_auth,
+)
 from .helpers import chunks, import_secret, retention
 from .network import N8N_PORT, NetworkStack
 
@@ -80,6 +88,7 @@ class ServiceStack(cdk.Stack):
         self.alb: elbv2.ApplicationLoadBalancer | None = None
         self.distribution: cloudfront.Distribution | None = None
         self.origin_function: lambda_.Function | None = None
+        self.auth_function: lambda_.Function | None = None  # when in this stack
         self.operations: DashboardBuilder | None = None
         self.zone = hosted_zone(self, d) if d.ingress.domain else None
         self._imported: dict[str, secretsmanager.ISecret] = {}
@@ -91,6 +100,8 @@ class ServiceStack(cdk.Stack):
             self._load_balancer()
         if d.ingress.kind == "cloudfront":
             self._distribution()
+        if needs_edge_auth(d):
+            self._edge_auth_config()
         self.url = self._resolve(plan.url)
         for role in plan.roles:
             self._service(role)
@@ -286,18 +297,37 @@ class ServiceStack(cdk.Stack):
                     )
                 ],
             )
-        self.distribution = cloudfront.Distribution(
-            self,
-            "Distribution",
-            comment=f"n8n {d.name}",
-            default_behavior=cloudfront.BehaviorOptions(
+
+        def behavior(
+            edge_lambdas: list[cloudfront.EdgeLambda] | None = None,
+        ) -> cloudfront.BehaviorOptions:
+            return cloudfront.BehaviorOptions(
                 origin=origin,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                 cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                 origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
                 compress=True,
-            ),
+                edge_lambdas=edge_lambdas,
+            )
+
+        wall: list[cloudfront.EdgeLambda] | None = None
+        if needs_edge_auth(d):
+            # Public paths get behaviors of their own, without the function: external
+            # callers pass, and webhook traffic pays for no Lambda@Edge invocation.
+            for path in self.plan.public_paths:
+                additional.setdefault(path, behavior())
+            wall = [
+                cloudfront.EdgeLambda(
+                    function_version=self._edge_auth_version(),
+                    event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
+                )
+            ]
+        self.distribution = cloudfront.Distribution(
+            self,
+            "Distribution",
+            comment=f"n8n {d.name}",
+            default_behavior=behavior(wall),
             additional_behaviors=additional or None,
             domain_names=[d.ingress.domain] if d.ingress.domain else None,
             certificate=certificate,
@@ -305,6 +335,84 @@ class ServiceStack(cdk.Stack):
             http_version=cloudfront.HttpVersion.HTTP2_AND_3,
             minimum_protocol_version=cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
         )
+
+    def _edge_auth_version(self) -> lambda_.IVersion:
+        """The login-wall function: from the us-east-1 stack, or from this one."""
+        if self.edge is not None and self.edge.auth_function is not None:
+            return lambda_.Version.from_version_arn(
+                self,
+                "EdgeAuthVersion",
+                self.edge.auth_function.current_version.edge_arn,
+            )
+        self.auth_function = edge_auth_function(self, self.d)
+        return self.auth_function.current_version
+
+    def _edge_auth_config(self) -> None:
+        """Write the user pool and app client where the edge function reads them."""
+        d = self.d
+        pool, client, domain = self._cognito()
+        spec = d.auth.cognito
+        if spec.kind == "existing":
+            host = (
+                spec.domain
+                if "." in spec.domain
+                else f"{spec.domain}.auth.{self.region}.amazoncognito.com"
+            )
+        else:
+            host = f"{domain.domain_name}.auth.{self.region}.amazoncognito.com"
+        name = edge_auth_parameter(d)
+        value = self.to_json_string(
+            {
+                "userPoolId": pool.user_pool_id,
+                "clientId": client.user_pool_client_id,
+                "cognitoDomain": host,
+                "region": self.region,
+            }
+        )
+
+        def put() -> cr.AwsSdkCall:
+            return cr.AwsSdkCall(
+                service="SSM",
+                action="putParameter",
+                region=EDGE_REGION,
+                parameters={
+                    "Name": name,
+                    "Value": value,
+                    "Type": "String",
+                    "Overwrite": True,
+                },
+                physical_resource_id=cr.PhysicalResourceId.of(name),
+            )
+
+        log_group = self._function_logs("EdgeAuthConfigLogs")
+        writer = cr.AwsCustomResource(
+            self,
+            "EdgeAuthConfig",
+            on_create=put(),
+            on_update=put(),
+            on_delete=cr.AwsSdkCall(
+                service="SSM",
+                action="deleteParameter",
+                region=EDGE_REGION,
+                parameters={"Name": name},
+                ignore_error_codes_matching="ParameterNotFound",
+            ),
+            policy=cr.AwsCustomResourcePolicy.from_statements(
+                [
+                    iam.PolicyStatement(
+                        actions=["ssm:PutParameter", "ssm:DeleteParameter"],
+                        resources=[
+                            f"arn:{self.partition}:ssm:{EDGE_REGION}:{self.account}"
+                            f":parameter{name}"
+                        ],
+                    )
+                ]
+            ),
+            install_latest_aws_sdk=False,
+            log_group=log_group,
+        )
+        # Delete the writer before its log group: its last run would recreate it.
+        writer.node.add_dependency(log_group)
 
     def _serves_metrics(self) -> bool:
         """True when n8n answers on /metrics, which must not reach the internet."""
@@ -851,16 +959,33 @@ class ServiceStack(cdk.Stack):
                 ),
             )
             providers.append(cognito.UserPoolClientIdentityProvider.custom("corporate"))
-        client = pool.add_client(
-            "Alb",
-            generate_secret=True,
-            o_auth=cognito.OAuthSettings(
-                flows=cognito.OAuthFlows(authorization_code_grant=True),
-                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
-                callback_urls=[f"https://{d.ingress.domain}/oauth2/idpresponse"],
-            ),
-            supported_identity_providers=providers,
-        )
+        if d.auth.mode == "cloudfront-cognito":
+            # A public client: the edge function uses PKCE and holds no secret.
+            client = pool.add_client(
+                "Edge",
+                generate_secret=False,
+                auth_flows=cognito.AuthFlow(),
+                o_auth=cognito.OAuthSettings(
+                    flows=cognito.OAuthFlows(authorization_code_grant=True),
+                    scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+                    callback_urls=[f"https://{d.ingress.domain}{EDGE_AUTH_CALLBACK}"],
+                    logout_urls=[f"https://{d.ingress.domain}/"],
+                ),
+                supported_identity_providers=providers,
+                id_token_validity=cdk.Duration.hours(min(d.auth.session_hours, 24)),
+                prevent_user_existence_errors=True,
+            )
+        else:
+            client = pool.add_client(
+                "Alb",
+                generate_secret=True,
+                o_auth=cognito.OAuthSettings(
+                    flows=cognito.OAuthFlows(authorization_code_grant=True),
+                    scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+                    callback_urls=[f"https://{d.ingress.domain}/oauth2/idpresponse"],
+                ),
+                supported_identity_providers=providers,
+            )
         if identity_provider is not None:
             client.node.add_dependency(identity_provider)
         for index, email in enumerate(spec.invite):

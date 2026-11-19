@@ -197,6 +197,19 @@ def auth_wrappers(d: Deployment) -> Iterator[Finding]:
             "cloudfront-cognito needs ingress.kind cloudfront",
             "use alb-cognito with an ALB",
         )
+    if mode == "cloudfront-cognito" and not d.ingress.domain:
+        yield _error(
+            "T7",
+            "ingress.domain",
+            "cloudfront-cognito needs a domain of yours for the Cognito callback",
+        )
+    if mode == "cloudfront-cognito" and len(d.auth.public_paths) > 10:
+        yield _error(
+            "T7",
+            "auth.public_paths",
+            "each public path is a CloudFront behavior; keep at most 10 extra paths "
+            "(CloudFront allows 25 behaviors)",
+        )
     if mode == "ip-allowlist" and "0.0.0.0/0" in d.ingress.allowed_cidrs:
         yield _error(
             "T6",
@@ -701,6 +714,18 @@ def finops_metrics(d: Deployment) -> Iterator[Finding]:
             else "topology.workers.scale_on",
             f"a CloudWatch agent publishes {count} n8n metrics: about "
             f"${0.30 * count:.2f}/month, plus a few MB of metric logs",
+        )
+
+
+@rule
+def finops_edge_auth(d: Deployment) -> Iterator[Finding]:
+    if d.auth.mode == "cloudfront-cognito":
+        yield _info(
+            "F7",
+            "auth.mode",
+            "the Lambda@Edge login wall runs on editor requests only: about $0.60 "
+            "per million requests plus duration; Cognito is free up to 10,000 "
+            "monthly active users",
         )
 
 

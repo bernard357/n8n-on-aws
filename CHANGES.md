@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Cognito login wall at CloudFront with Lambda@Edge, `auth.mode: cloudfront-cognito` (#6):
+  - a viewer-request function in us-east-1 runs the code flow with PKCE on a public app client
+    and checks the ID token on every editor request; no client secret exists
+  - public paths have CloudFront behaviors without the function
+  - the pool and client IDs reach the function through an SSM parameter in us-east-1
+  - dashboard section "Login wall" and an alarm on function errors near the region
+  - `n8n-on-aws cleanup` deletes the retained function and its log groups in every region, once
+    AWS has removed the replicas
+  - rules: `T7` (a domain is needed; at most 10 extra public paths), `F7` (cost)
+  - `nano` and `small-team` now synthesize
 - Worker scaling on queue depth and n8n metrics in CloudWatch (#5):
   - a CloudWatch agent sidecar on main publishes n8n's queue gauges to the `n8n-on-aws`
     namespace; `observability.prometheus: cloudwatch` adds five process metrics

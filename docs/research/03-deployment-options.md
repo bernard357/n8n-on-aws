@@ -166,6 +166,27 @@ the cookie. `/webhook-test/*`, `/form-test/*` and `/mcp-test/*` stay protected, 
 `auth.public_paths` when scripts call it from outside. The paths assume the default
 `N8N_ENDPOINT_*` names.
 
+### Cognito at the edge (`cloudfront-cognito`)
+
+- A **viewer-request Lambda@Edge** function (Node.js 22, no dependencies) guards the default
+  CloudFront behavior. Each public path gets its own behavior **without** the function, so webhook
+  traffic passes and pays for no invocation.
+- **No secret anywhere:** the app client is public, and the function runs the OAuth code flow with
+  PKCE. Callback `/_auth/callback`, sign-out `/_auth/signout`. The ID token sits in an HttpOnly,
+  Secure, SameSite=Lax cookie; the function checks its RS256 signature against the pool's JWKS, its
+  issuer, audience, `token_use` and expiry on every request, and does not pass it on to n8n.
+- **Configuration:** Lambda@Edge has no environment variables. The domain, paths and session length
+  are written next to the code at synth time. The user pool and client are created in the
+  deployment's region, after the us-east-1 stack, so the `<name>-n8n` stack writes their IDs to the
+  SSM parameter `/n8n-on-aws/<name>/edge-auth` in us-east-1 (custom resource), and the function
+  reads it once per cold start. Until then it answers 503 and retries.
+- **Session:** the ID token lives `min(session_hours, 24)` hours (Cognito's maximum). When it
+  expires, a page load goes back through Cognito (silent while the Cognito session lasts) and an
+  API call gets 401, so the editor asks to reload. There is no refresh token.
+- **Teardown:** AWS deletes Lambda@Edge replicas hours after the distribution stops using them,
+  so the function is retained by `destroy`; `n8n-on-aws cleanup` deletes it later, with its log
+  groups `/aws/lambda/us-east-1.<name>-edge-auth` in every region.
+
 ### Network
 
 | Option | Notes |

@@ -228,6 +228,14 @@ def _run_cdk(verb: str, args: argparse.Namespace, out: TextIO) -> int:
             "Lambda leaves a log group under /aws/lambda/<name>-network-",
             file=out,
         )
+        if result.deployment.auth.mode == "cloudfront-cognito":
+            print(
+                "note: the Lambda@Edge login wall is retained, because AWS deletes "
+                "its replicas hours after the distribution is gone; run "
+                f"`n8n-on-aws cleanup -f {args.file}` later to delete it and its "
+                "log groups in every region",
+                file=out,
+            )
         if result.deployment.ingress.certificate.kind == "create":
             print(
                 "note: the certificate's DNS validation record (_<hash>.<domain> "
@@ -244,6 +252,86 @@ def cmd_diff(args: argparse.Namespace, out: TextIO) -> int:
 
 def cmd_destroy(args: argparse.Namespace, out: TextIO) -> int:
     return _run_cdk("destroy", args, out)
+
+
+def _aws(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["aws", *arguments], capture_output=True, text=True, check=False
+    )
+
+
+def cmd_cleanup(args: argparse.Namespace, out: TextIO) -> int:
+    """Delete what outlives ``destroy``: the Lambda@Edge function and its logs."""
+    result = _load(args, out)
+    if result is None or result.deployment is None:
+        if result is not None:
+            _summary(args.file, result, out)
+        return EXIT_USAGE if result is None else EXIT_INVALID
+    from .cdk.edge import EDGE_REGION, edge_auth_function_name, needs_edge_auth
+
+    d = result.deployment
+    if not needs_edge_auth(d):
+        print(f"{d.name}: nothing outlives destroy here", file=out)
+        return EXIT_OK
+    if shutil.which("aws") is None:
+        print("error: the AWS CLI is needed for cleanup", file=sys.stderr)
+        return EXIT_USAGE
+    name = edge_auth_function_name(d)
+    if not args.yes:
+        print(
+            f"Delete the Lambda@Edge function {name} (us-east-1) and its log groups "
+            "in every region? [y/N] ",
+            end="",
+            file=out,
+        )
+        out.flush()
+        if input().strip().lower() not in ("y", "yes"):
+            return EXIT_OK
+    deleted = _aws(
+        "lambda", "delete-function", "--region", EDGE_REGION, "--function-name", name
+    )
+    code = EXIT_OK
+    if deleted.returncode == 0:
+        print(f"deleted function {name}", file=out)
+    elif "ResourceNotFoundException" in deleted.stderr:
+        print(f"function {name} is already gone", file=out)
+    elif "replicated function" in deleted.stderr:
+        print(
+            f"function {name} still has replicas: AWS removes them a few hours "
+            "after the distribution is deleted; run cleanup again later",
+            file=out,
+        )
+        code = EXIT_INVALID
+    else:
+        print(f"error: {deleted.stderr.strip()}", file=sys.stderr)
+        return EXIT_INVALID
+    regions = _aws(
+        "ec2",
+        "describe-regions",
+        "--region",
+        EDGE_REGION,
+        "--query",
+        "Regions[].RegionName",
+        "--output",
+        "text",
+    )
+    if regions.returncode != 0:
+        print(f"error: {regions.stderr.strip()}", file=sys.stderr)
+        return EXIT_INVALID
+    groups = [f"/aws/lambda/{EDGE_REGION}.{name}", f"/aws/lambda/{name}"]
+    for region in regions.stdout.split():
+        for group in groups:
+            gone = _aws(
+                "logs",
+                "delete-log-group",
+                "--region",
+                region,
+                "--log-group-name",
+                group,
+            )
+            if gone.returncode == 0:
+                print(f"deleted log group {group} in {region}", file=out)
+    return code
 
 
 def cmd_schema(args: argparse.Namespace, out: TextIO) -> int:
@@ -308,6 +396,13 @@ def build_parser() -> argparse.ArgumentParser:
     with_file(p)
     p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     p.set_defaults(func=cmd_destroy)
+
+    p = sub.add_parser(
+        "cleanup", help="delete what outlives destroy (the Lambda@Edge login wall)"
+    )
+    with_file(p)
+    p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    p.set_defaults(func=cmd_cleanup)
 
     p = sub.add_parser("schema", help="print the JSON Schema of the file")
     p.add_argument("-o", "--output", help="write to this file")

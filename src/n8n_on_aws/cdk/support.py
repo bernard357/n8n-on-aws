@@ -27,10 +27,6 @@ def synthesis_findings(d: Deployment) -> list[Finding]:
         findings.append(_not_yet("runtime.platform", "EKS"))
     if d.runtime.platform == "ecs" and d.runtime.ecs.capacity == "ec2":
         findings.append(_not_yet("runtime.ecs.capacity", "ECS on EC2 capacity"))
-    if d.auth.mode == "cloudfront-cognito":
-        findings.append(
-            _not_yet("auth.mode", "Cognito at the edge (cloudfront-cognito)")
-        )
     if d.ingress.kind == "cloudfront" and d.ingress.cloudfront.waf.kind != "none":
         findings.append(_not_yet("ingress.cloudfront.waf", "WAF on CloudFront"))
     if d.ingress.kind == "cloudfront" and d.auth.mode == "ip-allowlist":
@@ -51,6 +47,17 @@ def synthesis_findings(d: Deployment) -> list[Finding]:
             _degraded(
                 "finops.anomaly_detection",
                 "anomaly detection needs finops.budget.alert_emails; skipped",
+            )
+        )
+    if d.auth.mode == "cloudfront-cognito" and d.auth.cognito.kind == "existing":
+        findings.append(
+            Finding(
+                level="info",
+                code="C3",
+                path="auth.cognito.client_id",
+                message="the existing app client must have no secret, the code "
+                f"grant, and https://{d.ingress.domain}/_auth/callback as a "
+                "callback URL",
             )
         )
     if d.auth.mode == "alb-cognito" and d.auth.cognito.kind == "existing":
